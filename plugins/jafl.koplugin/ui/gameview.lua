@@ -7,6 +7,7 @@ local InfoMessage=require("ui/widget/infomessage")
 local _=require("gettext")
 
 local GameView=InputContainer:extend{}
+local BOOK_TEXT_SIZE=20
 
 function GameView:start()
     local result,err=self.game:load(self.game.state.book,self.game.state.section)
@@ -21,7 +22,7 @@ function GameView:render(result)
     local buttons={}
     for i,a in ipairs(self.game.actions) do
         local index=i
-        buttons[#buttons+1]={{text=tostring(i)..". "..a.label,callback=function()
+        buttons[#buttons+1]={{text=tostring(i)..". "..a.label,text_font_size=BOOK_TEXT_SIZE,font_bold=false,callback=function()
             local next_result,err=self.game:choose(index)
             if next_result then self:render(next_result) else UIManager:show(InfoMessage:new{text=tostring(err)}) end
         end}}
@@ -32,6 +33,7 @@ function GameView:render(result)
         {text=_("Close"),callback=function() self.save:write(self.game.state); UIManager:close(self.viewer); UIManager:close(self) end},
     }
     self.viewer=TextViewer:new{title=result.title,text=result.text..footer,fullscreen=true,
+        text_size=BOOK_TEXT_SIZE,font_size=BOOK_TEXT_SIZE,
         buttons_table=buttons}
     UIManager:show(self.viewer)
     self.save:write(self.game.state)

@@ -346,8 +346,11 @@ function Game:walk(node, enabled)
     elseif n=="outcomes" then
         local value=self.state.variables[a.var or "*random*"] or self.last_roll
         for _,c in ipairs(node.children or {}) do
-            if type(c)=="table" and c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr) then
-                self:walk(c,true); break
+            if type(c)=="table" then
+                local matched=c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr)
+                    or c.name=="success" and value~=nil and value>0
+                    or c.name=="failure" and value~=nil and value<=0
+                if matched then self:walk(c,true); break end
             end
         end
         return

@@ -87,7 +87,10 @@ The same ordered interpreter handles the rest of the playable XML vocabulary:
   gains/losses. Wildcard inventory and money losses are supported.
 - **Rolls and outcomes:** authored dice counts and adjustments, stored roll
   variables, numeric single/range/or/plus outcome ranges, difficulty and Rank
-  checks, and success/failure branches.
+  checks, and success/failure branches. An `<outcomes>` container dispatch can contain
+  either numeric `<outcome>` entries or direct `<success>`/`<failure>` entries;
+  the latter resume the matching destination after a check, as used by book 1,
+  section 257.
 - **Navigation:** forced and optional gotos, cross-book travel, alive/dead routes,
   section history, and return actions.
 - **Economy:** item/weapon/armour/tool buy and sell entries, affordability and
@@ -105,3 +108,7 @@ Pure presentation/container tags (`section`, `p`, headings, emphasis, boxes,
 tables, text and grouping nodes) recurse through their children while preserving
 mixed-content order. Images are resolved by the content catalog and shown by the
 KOReader view.
+
+Main adventure prose and generated choice buttons use the same ordinary
+20-point book-reading size. Choice labels are not bold, leaving the title and
+status controls as the visual hierarchy rather than oversized action text.

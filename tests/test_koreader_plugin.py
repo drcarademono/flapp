@@ -39,6 +39,10 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertNotIn('ImageViewer:new{image=map_path', source)
         self.assertNotIn('text=_("Choices")', source)
         self.assertNotIn('require("ui/widget/buttondialog")', source)
+        self.assertIn("local BOOK_TEXT_SIZE=20", source)
+        self.assertIn("text_font_size=BOOK_TEXT_SIZE", source)
+        self.assertIn("font_bold=false", source)
+        self.assertIn("text_size=BOOK_TEXT_SIZE", source)
 
     def test_combat_matches_java_damage_and_resumes_section(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
@@ -86,6 +90,14 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("function State.remove_matching_items", state)
         for field in ("diseases = {}", "poisons = {}", "caches = {}", "history = {}"):
             self.assertIn(field, state)
+
+    def test_outcomes_dispatch_success_and_failure_transitions(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('c.name=="success" and value~=nil and value>0', source)
+        self.assertIn('c.name=="failure" and value~=nil and value<=0', source)
+        section = (ROOT / "book1" / "257.xml").read_text()
+        self.assertIn('<success section="630"/>', section)
+        self.assertIn('<failure section="36"/>', section)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
