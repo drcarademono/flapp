@@ -66,6 +66,12 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("if a.staminato then", source)
         self.assertIn('if (a.shards=="*" or a.gold=="*") and direction<0', source)
 
+    def test_destinations_match_java_alive_and_dead_states(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("local function destination_matches_life_state", source)
+        self.assertIn("(state.stamina<=0)==truth(attributes.dead,false)", source)
+        self.assertNotIn("(self.state.stamina>0)==truth(a.dead,false)", source)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

@@ -86,6 +86,11 @@ function Game:condition(a)
     return truth(a["not"], false) and not ok or ok
 end
 
+local function destination_matches_life_state(state, attributes)
+    -- GotoNode.canUse(): an omitted dead attribute means "only while alive".
+    return (state.stamina<=0)==truth(attributes.dead,false)
+end
+
 function Game:mutate(name, a, direction)
     local s = self.state
     if a.staminato then
@@ -293,8 +298,7 @@ function Game:walk(node, enabled)
     end
     if not enabled then return end
     if n=="choice" then
-        local alive_for_destination=(self.state.stamina>0)==truth(a.dead,false)
-        if self:condition(a) and alive_for_destination and
+        if self:condition(a) and destination_matches_life_state(self.state,a) and
                 (not a.book or self.catalog.books[a.book] and self.catalog.books[a.book].installed) then
             self:add_action(plain(node),"goto",a)
         end
@@ -302,8 +306,7 @@ function Game:walk(node, enabled)
     elseif n=="goto" then
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
-        local alive_for_destination=(self.state.stamina>0)==truth(a.dead,false)
-        if self:condition(a) and alive_for_destination then
+        if self:condition(a) and destination_matches_life_state(self.state,a) then
             self:add_action(plain(node) ~= "" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)
             if truth(a.force,true) then self:pause_section() end
         end

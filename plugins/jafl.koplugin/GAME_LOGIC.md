@@ -23,6 +23,10 @@ suspends section execution on supported KOReader builds.
 - Winning or losing resumes at the node immediately following the fight.
 - A normal `goto` is usable only while the adventurer is alive. A `dead="t"`
   destination is usable only while dead, matching `GotoNode.canUse()`.
+- Life-state matching compares `stamina <= 0` with the `dead` flag. In
+  particular, an omitted `dead` flag is false and therefore matches a living
+  character. This rule applies equally to `choice` and `goto`, including the
+  character-selection and begin-adventure screens.
 - A usable forced destination pauses execution. Therefore, in section 570, an
   adventurer who wins stops at section 148. An adventurer who dies cannot use
   section 148, continues through the authored recovery effects, and then stops
