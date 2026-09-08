@@ -168,6 +168,14 @@ only XML text between conditional tags does not terminate an if/elseif/else chai
 Thus book 2, section 409 displays the complete “If not, Turn to 353.” branch and
 uses the same text for its action.
 
+Conditional content has separate presentation and execution states, as it does
+in Java. The prose for every `if`/`elseif`/`else` branch remains in the section
+document, while only the branch whose conditions are met executes mutations and
+enables its destinations. Empty `<goto/>` elements also receive their generated
+destination text while a disabled branch is being presented. Consequently book
+5, section 150 shows all of its “If you have…” instructions, but exposes only
+the destination appropriate to the adventurer's current codewords.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

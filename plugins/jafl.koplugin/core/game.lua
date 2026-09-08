@@ -320,6 +320,17 @@ function Game:resume_pending_check_children()
     end
 end
 
+function Game:goto_label(node)
+    local label=plain(node)
+    if label~="" then return label end
+    local a=node.attr or {}
+    if a.book then
+        local book=self.catalog.books[tostring(a.book)]
+        return ((book and book.title) or ("Book "..tostring(a.book))).." "..tostring(a.section)
+    end
+    return "Turn to "..tostring(a.section)
+end
+
 -- Render already-authored content after a blocking inline action without
 -- executing its state changes or exposing later actions. Java builds the whole
 -- document before its ExecutableRunner starts; this provides the same separation.
@@ -329,6 +340,10 @@ function Game:render_node(node)
         return
     end
     if truth(node.attr and node.attr.hidden,false) then return end
+    if node.name=="goto" then
+        self.text[#self.text+1]=self:goto_label(node)
+        return
+    end
     for _,child in ipairs(node.children or {}) do self:render_node(child) end
     if node.name=="p" or node.name=="header" or node.name:match("^h%d$") then
         self.text[#self.text+1]="\n\n"
@@ -353,8 +368,7 @@ function Game:walk(node, enabled)
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
         if self:condition(a) and destination_matches_life_state(self.state,a) then
-            local label=plain(node)
-            local display_label=label ~= "" and label or ("Turn to "..tostring(a.section))
+            local display_label=self:goto_label(node)
             self.text[#self.text+1]=display_label
             self:add_action(display_label,"goto",a)
             if truth(a.force,true) then
@@ -504,12 +518,12 @@ function Game:walk(node, enabled)
             self:render_node(child)
         elseif type(child)=="table" and child.name=="if" then
             local matched=self:condition(child.attr); branch_taken=matched; in_chain=true
-            if matched then self:walk(child,true) end
+            if matched then self:walk(child,true) else self:render_node(child) end
         elseif type(child)=="table" and child.name=="elseif" and in_chain then
             local matched=not branch_taken and self:condition(child.attr); branch_taken=branch_taken or matched
-            if matched then self:walk(child,true) end
+            if matched then self:walk(child,true) else self:render_node(child) end
         elseif type(child)=="table" and child.name=="else" and in_chain then
-            if not branch_taken then self:walk(child,true) end
+            if not branch_taken then self:walk(child,true) else self:render_node(child) end
             in_chain=false; branch_taken=false
         elseif type(child)=="string" and not child:match("%S") then
             self:walk(child,enabled)

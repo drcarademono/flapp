@@ -194,6 +194,17 @@ class KOReaderPluginTests(unittest.TestCase):
         section = (ROOT / "book2" / "409.xml").read_text()
         self.assertIn('If not, <goto section="353"/>.', section)
 
+    def test_inactive_conditions_keep_their_java_document_text(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:goto_label(node)", source)
+        self.assertIn('if node.name=="goto" then', source)
+        self.assertIn("if matched then self:walk(child,true) else self:render_node(child) end", source)
+        self.assertIn("if not branch_taken then self:walk(child,true) else self:render_node(child) end", source)
+        section = (ROOT / "book5" / "150.xml").read_text()
+        self.assertIn('codeword="Diamond"', section)
+        self.assertIn('codeword="Erebus"', section)
+        self.assertIn('codeword="Evade"', section)
+
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
 
