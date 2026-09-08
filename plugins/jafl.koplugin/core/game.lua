@@ -106,8 +106,11 @@ end
 -- coroutine gives us the same ordered execution without displaying or applying
 -- content which belongs after the unresolved action.
 function Game:pause_section()
-    local running,is_main=coroutine.running()
-    if running and not is_main then coroutine.yield() end
+    local running=coroutine.running()
+    -- KOReader uses LuaJIT, whose optional second coroutine.running() result is
+    -- not portable across its Lua 5.1/5.2 compatibility configurations.  The
+    -- runner identity is unambiguous and works in every supported build.
+    if running and running==self.section_runner then coroutine.yield() end
 end
 
 function Game:resume_section()
@@ -201,7 +204,7 @@ function Game:walk(node, enabled)
         local alive_for_destination=(self.state.stamina>0)==truth(a.dead,false)
         if self:condition(a) and alive_for_destination then
             self:add_action(plain(node) ~= "" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)
-            self:pause_section()
+            if truth(a.force,true) then self:pause_section() end
         end
         return
     elseif n=="set" then self.state.variables[a.name or a.var]=self:value(a.value or a.amount)
@@ -334,18 +337,19 @@ function Game:choose(index)
         local enemy_defence=self:value(a.defence or 0)
         local enemy_combat=self:value(a.combat or a.attack or 0)
         local flee_at=math.max(0,self:value(a.flee or 0))
-        local player_defence=a.playerDefence and self:value(a.playerDefence) or self.state.defence
-        local attack_dice=tonumber(a.attackDice) or 2
+        -- XML.parse normalizes every attribute name to lower case.
+        local player_defence=a.playerdefence and self:value(a.playerdefence) or self.state.defence
+        local attack_dice=tonumber(a.attackdice) or 2
         local enemy_attacks=tonumber(a.attacks) or 1
-        local player_first=truth(a.playerFirst,true)
+        local player_first=truth(a.playerfirst,true)
         local rounds,log=0,{}
 
-        local pre_damage=a.preDamage and self:value(a.preDamage) or 0
+        local pre_damage=a.predamage and self:value(a.predamage) or 0
         if pre_damage>0 then
             local dealt=math.min(pre_damage,enemy_stamina)
             enemy_stamina=enemy_stamina-dealt
             log[#log+1]=string.format("Before combat, %s takes %d damage.",a.name or "the enemy",dealt)
-            if a.staminaLost then self.state.variables[a.staminaLost]=(self.state.variables[a.staminaLost] or 0)+dealt end
+            if a.staminalost then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+dealt end
         end
 
         local function enemy_turn()
@@ -354,8 +358,8 @@ function Game:choose(index)
                 local roll=roll_dice(self,2)+enemy_combat
                 local damage=combat_damage(roll,player_defence)
                 if damage>0 then
-                    if a.abilityDamaged and a.abilityDamaged:lower()~="stamina" then
-                        local ability=ability_key(a.abilityDamaged)
+                    if a.abilitydamaged and a.abilitydamaged:lower()~="stamina" then
+                        local ability=ability_key(a.abilitydamaged)
                         self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-damage)
                     else
                         self.state.stamina=math.max(0,self.state.stamina-damage)
@@ -374,7 +378,7 @@ function Game:choose(index)
             local roll=roll_dice(self,attack_dice)+(self.state.abilities.Combat or 0)
             local damage=combat_damage(roll,enemy_defence)
             enemy_stamina=math.max(0,enemy_stamina-damage)
-            if a.staminaLost and damage>0 then self.state.variables[a.staminaLost]=(self.state.variables[a.staminaLost] or 0)+damage end
+            if a.staminalost and damage>0 then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+damage end
             log[#log+1]=string.format("You roll %d against %s's Defence %d: %s. (%d Stamina left)",roll,
                 a.name or "the enemy",enemy_defence,damage>0 and (damage.." damage") or "miss",enemy_stamina)
             if enemy_stamina>flee_at then enemy_turn() end

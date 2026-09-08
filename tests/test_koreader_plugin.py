@@ -43,12 +43,23 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_combat_matches_java_damage_and_resumes_section(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("math.max(0, roll - defence)", source)
-        self.assertIn("local attack_dice=tonumber(a.attackDice) or 2", source)
+        self.assertIn("local attack_dice=tonumber(a.attackdice) or 2", source)
         self.assertIn("local enemy_attacks=tonumber(a.attacks) or 1", source)
         self.assertIn("self.section_runner=coroutine.create", source)
         self.assertIn("self:resume_section()", source)
         self.assertIn("self:pause_section()", source)
+        self.assertIn("running==self.section_runner", source)
+        self.assertNotIn("local running,is_main=coroutine.running()", source)
         self.assertNotIn("self:value(a.damage or 1)", source)
+
+    def test_combat_uses_parser_normalized_attribute_names(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        for attribute in ("playerdefence", "attackdice", "playerfirst", "predamage",
+                          "staminalost", "abilitydamaged"):
+            self.assertIn("a." + attribute, source)
+        for attribute in ("playerDefence", "attackDice", "playerFirst", "preDamage",
+                          "staminaLost", "abilityDamaged"):
+            self.assertNotIn("a." + attribute, source)
 
     def test_loss_effects_support_java_recovery_semantics(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
