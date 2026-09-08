@@ -62,7 +62,11 @@ function Game:condition(a)
     if ok and a.weapon then ok = State.has_item(s,a.weapon=="*" and nil or a.weapon,"weapon",a.bonus,a.tags) end
     if ok and a.armour then ok = State.has_item(s,a.armour=="*" and nil or a.armour,"armour",a.bonus,a.tags) end
     if ok and a.tool then ok = State.has_item(s,a.tool=="*" and nil or a.tool,"tool",a.bonus,a.tags) end
-    if ok and a.shards then ok = s.shards >= self:value(a.shards) end
+    if ok and a.shards then
+        local available=s.shards
+        if a.cache then available=(s.caches[a.cache] and s.caches[a.cache].shards) or 0 end
+        ok = available >= self:value(a.shards)
+    end
     if ok and a.ticks then ok = s.ticks >= self:value(a.ticks) end
     if ok and a.var then
         local value = s.variables[a.var]
@@ -104,15 +108,12 @@ function Game:mutate(name, a, direction)
     local s = self.state
     if a.staminato then
         s.stamina=math.max(0,math.min(s.max_stamina,self:value(a.staminato)))
-        return
     end
     if (a.shards=="*" or a.gold=="*") and direction<0 then
         s.shards=0
-        return
     end
     if direction<0 and (a.item=="*" or a.weapon=="*" or a.armour=="*" or a.tool=="*") then
         State.remove_matching_items(s,a)
-        return
     end
     local amount = self:value(a.amount or a.value or a.stamina or 1) * direction
     local ability = a.ability and a.ability:gsub("^%l", string.upper)
@@ -319,6 +320,21 @@ function Game:resume_pending_check_children()
     end
 end
 
+-- Render already-authored content after a blocking inline action without
+-- executing its state changes or exposing later actions. Java builds the whole
+-- document before its ExecutableRunner starts; this provides the same separation.
+function Game:render_node(node)
+    if type(node)=="string" then
+        if node:match("%S") then self.text[#self.text+1]=normalize_text(node) end
+        return
+    end
+    if truth(node.attr and node.attr.hidden,false) then return end
+    for _,child in ipairs(node.children or {}) do self:render_node(child) end
+    if node.name=="p" or node.name=="header" or node.name:match("^h%d$") then
+        self.text[#self.text+1]="\n\n"
+    end
+end
+
 function Game:walk(node, enabled)
     self.steps=self.steps+1; if self.steps > 10000 then error("section execution limit exceeded") end
     if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=normalize_text(node) end return end
@@ -337,8 +353,13 @@ function Game:walk(node, enabled)
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
         if self:condition(a) and destination_matches_life_state(self.state,a) then
-            self:add_action(plain(node) ~= "" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)
-            if truth(a.force,true) then self:pause_section() end
+            local label=plain(node)
+            if label~="" then self.text[#self.text+1]=label end
+            self:add_action(label ~= "" and label or ("Turn to "..tostring(a.section)),"goto",a)
+            if truth(a.force,true) then
+                if (self.paragraph_depth or 0)>0 then self.deferred_block=true
+                else self:pause_section() end
+            end
         end
         return
     elseif n=="set" then self.state.variables[a.name or a.var]=self:value(a.value or a.amount)
@@ -476,7 +497,9 @@ function Game:walk(node, enabled)
     local branch_taken=false
     local in_chain=false
     for _,child in ipairs(node.children or {}) do
-        if type(child)=="table" and child.name=="if" then
+        if self.deferred_block then
+            self:render_node(child)
+        elseif type(child)=="table" and child.name=="if" then
             local matched=self:condition(child.attr); branch_taken=matched; in_chain=true
             if matched then self:walk(child,true) end
         elseif type(child)=="table" and child.name=="elseif" and in_chain then
@@ -492,6 +515,10 @@ function Game:walk(node, enabled)
     if n=="p" or n=="header" or n:match("^h%d$") then self.text[#self.text+1]="\n\n" end
     if is_paragraph then
         self.paragraph_depth=self.paragraph_depth-1
+        if self.paragraph_depth==0 and self.deferred_block then
+            self.deferred_block=false
+            self:pause_section()
+        end
         if self.paragraph_depth==0 and self.pause_after_paragraph then
             self.pause_after_paragraph=false
             self:pause_section()
@@ -509,7 +536,7 @@ function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
-    self.paragraph_depth=0; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
+    self.paragraph_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)

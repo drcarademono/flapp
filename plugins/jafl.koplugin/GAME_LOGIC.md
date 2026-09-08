@@ -149,6 +149,18 @@ result from splitting a sentence, as previously happened in book 2, section 499.
 Text-node whitespace is condensed, spaced hyphens become en dashes, and three
 periods become an ellipsis, matching `ParserHandler.condenseContent()`.
 
+Java constructs and displays the complete section document before its separate
+`ExecutableRunner` pauses on an action. KOReader mirrors that distinction for a
+forced `goto` embedded in a paragraph: it renders the goto's label and the rest
+of the paragraph, but does not execute state changes or expose actions after the
+goto. Execution still pauses at the goto. This keeps sentences such as book 2,
+section 289's “If not, the brigands kill you.” intact. Conditions using both
+`cache` and `shards` compare the requested amount with that money cache rather
+than the adventurer's carried Shards.
+Action attributes are cumulative rather than mutually exclusive: for example,
+`<lose item="*" shards="*">` removes both all possessions and all carried money
+before rendering the remainder of the paragraph.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.
