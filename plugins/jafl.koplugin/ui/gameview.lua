@@ -10,6 +10,13 @@ local GameView=InputContainer:extend{}
 local BOOK_TEXT_SIZE=12
 local ACTIONS_PER_PAGE=6
 
+local function menu_label(label)
+    -- Java highlights the action in-place, so an inline generated phrase can
+    -- correctly begin with lower-case text. KOReader repeats that phrase in a
+    -- standalone numbered menu, where it begins a new UI sentence.
+    return tostring(label or ""):gsub("^%l",string.upper)
+end
+
 function GameView:start(initial_result)
     local result,err=initial_result
     if not result then result,err=self.game:load(self.game.state.book,self.game.state.section) end
@@ -31,7 +38,7 @@ function GameView:render(result, action_page)
     for i=first,last do
         local a=self.game.actions[i]
         local index=i
-        buttons[#buttons+1]={{text=tostring(i)..". "..a.label,text_font_size=BOOK_TEXT_SIZE,font_bold=false,callback=function()
+        buttons[#buttons+1]={{text=tostring(i)..". "..menu_label(a.label),text_font_size=BOOK_TEXT_SIZE,font_bold=false,callback=function()
             local next_result,err=self.game:choose(index)
             if next_result then self:render(next_result) else UIManager:show(InfoMessage:new{text=tostring(err)}) end
         end}}

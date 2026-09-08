@@ -43,6 +43,8 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("local BOOK_TEXT_SIZE=12", source)
         self.assertIn("text_font_size=BOOK_TEXT_SIZE", source)
         self.assertIn("font_bold=false", source)
+        self.assertIn("local function menu_label(label)", source)
+        self.assertIn('tostring(i)..". "..menu_label(a.label)', source)
         self.assertIn("text_size=BOOK_TEXT_SIZE", source)
         self.assertIn("local ACTIONS_PER_PAGE=6", source)
         self.assertIn("local page_count=math.max(1,math.ceil(action_count/ACTIONS_PER_PAGE))", source)

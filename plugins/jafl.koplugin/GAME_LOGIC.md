@@ -201,6 +201,13 @@ or up to its `<outcomes>` container. Thus book 2, section 26 initially displays
 “Roll two dice:” rather than losing the authored colon; after the roll, execution
 continues into the matching outcome.
 
+Sentence-aware capitalization applies to the inline prose, just as it does to
+Java's clickable document span. KOReader additionally repeats available actions
+in a standalone numbered menu. That menu capitalizes the first letter because
+each button is an independent UI label; it does not alter the inline text. Thus
+book 2, section 75 reads “but roll two dice…” in the passage and shows
+“1. Roll two dice” in the action menu.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.
