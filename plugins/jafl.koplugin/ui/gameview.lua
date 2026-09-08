@@ -1,5 +1,5 @@
 local InputContainer=require("ui/widget/container/inputcontainer")
-local RenderImage=require("document/renderimage")
+local RenderImage=require("ui/renderimage")
 local UIManager=require("ui/uimanager")
 local TextViewer=require("ui/widget/textviewer")
 local ImageViewer=require("ui/widget/imageviewer")

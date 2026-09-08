@@ -33,7 +33,7 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('buttons_table=buttons', source)
         self.assertIn('text=_("Map")', source)
         self.assertIn('require("ui/widget/imageviewer")', source)
-        self.assertIn('require("document/renderimage")', source)
+        self.assertIn('require("ui/renderimage")', source)
         self.assertIn('RenderImage:renderImageFile(map_path,false)', source)
         self.assertIn('image_disposable=true', source)
         self.assertNotIn('ImageViewer:new{image=map_path', source)
