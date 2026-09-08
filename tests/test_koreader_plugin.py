@@ -107,6 +107,14 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertLess(bundled, configured)
         self.assertIn('io.open(bundled .. "/books.ini", "rb")', main)
 
+    def test_not_conditions_can_return_false_for_installed_books(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('if truth(a["not"],false) then return not ok end', game)
+        self.assertNotIn('truth(a["not"], false) and not ok or ok', game)
+        section = (ROOT / "book1" / "330.xml").read_text()
+        self.assertIn('<if not="t" book="2">', section)
+        self.assertIn('<goto book="2" section="217">', section)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

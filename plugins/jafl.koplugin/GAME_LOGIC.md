@@ -40,6 +40,11 @@ suspends section execution on supported KOReader builds.
   This prevents an old external-content setting containing only book 1 from
   masking bundled books 2–6 and incorrectly enabling missing-book boundaries
   such as book 1, section 330.
+- `not="t"` performs a real boolean inversion. In Lua this is implemented with
+  an explicit branch rather than an `and/or` pseudo-ternary, because a false
+  inverted result would otherwise fall through to the original true value. Thus
+  section 330 suppresses its book-missing block when book 2 is installed and
+  continues to the Wishport destination.
 - A usable forced destination pauses execution. Therefore, in section 570, an
   adventurer who wins stops at section 148. An adventurer who dies cannot use
   section 148, continues through the authored recovery effects, and then stops

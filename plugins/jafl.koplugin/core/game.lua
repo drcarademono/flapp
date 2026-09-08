@@ -83,7 +83,10 @@ function Game:condition(a)
         elseif a.equals then ok=score==self:value(a.equals) end
     end
     if ok and a.dead then ok = (s.stamina <= 0) == truth(a.dead, false) end
-    return truth(a["not"], false) and not ok or ok
+    -- Do not use Lua's `condition and false_value or true_value` pseudo-ternary
+    -- here: when the negated result is false, `or ok` changes it back to true.
+    if truth(a["not"],false) then return not ok end
+    return ok
 end
 
 local function destination_matches_life_state(state, attributes)
