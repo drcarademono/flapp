@@ -72,7 +72,16 @@ function Game:condition(a)
 end
 
 function Game:mutate(name, a, direction)
-    local s, amount = self.state, self:value(a.amount or a.value or 1) * direction
+    local s = self.state
+    if a.staminato then
+        s.stamina=math.max(0,math.min(s.max_stamina,self:value(a.staminato)))
+        return
+    end
+    if (a.shards=="*" or a.gold=="*") and direction<0 then
+        s.shards=0
+        return
+    end
+    local amount = self:value(a.amount or a.value or 1) * direction
     local ability = a.ability and a.ability:gsub("^%l", string.upper)
     if ability == "Stamina" then s.stamina = math.max(0, math.min(s.max_stamina, s.stamina + amount))
     elseif ability == "Rank" then s.rank = math.max(0, s.rank + amount)
@@ -90,6 +99,22 @@ function Game:add_action(label, kind, data)
     local action = { label=label, kind=kind, data=data }
     self.actions[#self.actions+1] = action
     return action
+end
+
+-- The desktop engine's ExecutableRunner stops at blocking actions (fights,
+-- forced gotos, and checks), then resumes at the following XML node.  A Lua
+-- coroutine gives us the same ordered execution without displaying or applying
+-- content which belongs after the unresolved action.
+function Game:pause_section()
+    local running,is_main=coroutine.running()
+    if running and not is_main then coroutine.yield() end
+end
+
+function Game:resume_section()
+    if not self.section_runner or coroutine.status(self.section_runner)=="dead" then return true end
+    local ok,err=coroutine.resume(self.section_runner)
+    if not ok then error(err) end
+    return coroutine.status(self.section_runner)=="dead"
 end
 
 local function ability_key(name)
@@ -164,12 +189,20 @@ function Game:walk(node, enabled)
     end
     if not enabled then return end
     if n=="choice" then
-        if self:condition(a) and (not a.book or self.catalog.books[a.book] and self.catalog.books[a.book].installed) then
+        local alive_for_destination=(self.state.stamina>0)==truth(a.dead,false)
+        if self:condition(a) and alive_for_destination and
+                (not a.book or self.catalog.books[a.book] and self.catalog.books[a.book].installed) then
             self:add_action(plain(node),"goto",a)
         end
         return
     elseif n=="goto" then
-        if self:condition(a) then self:add_action(plain(node) ~= "" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a) end
+        -- GotoNode.canUse() defaults dead to false: ordinary destinations are
+        -- unavailable while dead, while dead="t" destinations are death-only.
+        local alive_for_destination=(self.state.stamina>0)==truth(a.dead,false)
+        if self:condition(a) and alive_for_destination then
+            self:add_action(plain(node) ~= "" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)
+            self:pause_section()
+        end
         return
     elseif n=="set" then self.state.variables[a.name or a.var]=self:value(a.value or a.amount)
     elseif n=="tick" then self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
@@ -195,7 +228,10 @@ function Game:walk(node, enabled)
             if type(c)=="table" and (c.name=="success" or c.name=="failure") then self:attach_check_branch(c) end
         end
         return
-    elseif n=="fight" then self:add_action("Fight "..(a.name or "enemy"),"fight",node); return
+    elseif n=="fight" then
+        self:add_action("Fight "..(a.name or "enemy"),"fight",node)
+        self:pause_section()
+        return
     elseif n=="market" or n=="trade" then self:add_action(plain(node)~="" and plain(node) or "Open market","market",node); return
     elseif n=="buy" or n=="sell" then
         local cost=self:value(a.price or a.shards or a.amount or 0)
@@ -227,7 +263,8 @@ function Game:load(book, section)
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
     self.pending_checks={}; self.checks_by_var={}
-    local ok,msg=pcall(function() self:walk(root,true) end); if not ok then return nil,msg end
+    self.section_runner=coroutine.create(function() self:walk(root,true) end)
+    local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
     self.state.pending={kind="section",book=self.state.book,section=self.state.section}
     return { title=(self.catalog.books[self.state.book].title or "").." — "..self.state.section,
         text=table.concat(self.text):gsub("[ \t]+\n","\n"):match("^%s*(.-)%s*$"), actions=self.actions, image=self.image }
@@ -346,20 +383,12 @@ function Game:choose(index)
         local won=enemy_stamina<=flee_at and self.state.stamina>0
         self.text[#self.text+1]="\n\n"..table.concat(log,"\n").."\n\n"..(won and "You win the fight." or "You have been defeated.")
 
-        -- Walking a section has already discovered the actions after this fight.
-        -- Keep them, rather than leaving the result screen as the old dead end.
-        local remaining={}
-        for _,candidate in ipairs(self.actions) do
-            if candidate~=action then remaining[#remaining+1]=candidate end
-        end
         self.actions={}
-        if won and #remaining>0 then
-            self:add_action("Continue adventure","combat_continue",{actions=remaining})
-        end
+        -- Just like ExecutableRunner.continueExecution(), resume after the fight.
+        -- This evaluates dead= conditions and applies effects in their authored
+        -- order, stopping at the first usable forced goto.
+        self:resume_section()
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
-    elseif action.kind=="combat_continue" then
-        self.actions=action.data.actions
-        return {title="Adventure continues",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="market" then
         self.actions={}; self.text={"Choose a transaction."}
         for _,child in ipairs(action.data.children) do self:walk(child,true) end

@@ -40,13 +40,20 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertNotIn('text=_("Choices")', source)
         self.assertNotIn('require("ui/widget/buttondialog")', source)
 
-    def test_combat_matches_java_damage_and_can_continue(self) -> None:
+    def test_combat_matches_java_damage_and_resumes_section(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("math.max(0, roll - defence)", source)
         self.assertIn("local attack_dice=tonumber(a.attackDice) or 2", source)
         self.assertIn("local enemy_attacks=tonumber(a.attacks) or 1", source)
-        self.assertIn('self:add_action("Continue adventure","combat_continue"', source)
+        self.assertIn("self.section_runner=coroutine.create", source)
+        self.assertIn("self:resume_section()", source)
+        self.assertIn("self:pause_section()", source)
         self.assertNotIn("self:value(a.damage or 1)", source)
+
+    def test_loss_effects_support_java_recovery_semantics(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("if a.staminato then", source)
+        self.assertIn('if (a.shards=="*" or a.gold=="*") and direction<0', source)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
