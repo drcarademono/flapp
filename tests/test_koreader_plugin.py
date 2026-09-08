@@ -27,6 +27,15 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("check.branches[#check.branches+1] = node", source)
         self.assertNotIn("check.data.branches[#check.data.branches+1] = node", source)
 
+    def test_game_view_exposes_choices_and_map_inline(self) -> None:
+        source = (PLUGIN / "ui" / "gameview.lua").read_text()
+        self.assertIn("for i,a in ipairs(self.game.actions) do", source)
+        self.assertIn('buttons_table=buttons', source)
+        self.assertIn('text=_("Map")', source)
+        self.assertIn('require("ui/widget/imageviewer")', source)
+        self.assertNotIn('text=_("Choices")', source)
+        self.assertNotIn('require("ui/widget/buttondialog")', source)
+
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
 
