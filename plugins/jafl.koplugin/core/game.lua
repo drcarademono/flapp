@@ -56,6 +56,9 @@ function Game:condition(a)
     if ok and a.profession then ok = s.profession:lower() == a.profession:lower() end
     if ok and a.gender then ok = s.gender:sub(1,1):lower() == a.gender:sub(1,1):lower() end
     if ok and a.item then ok = State.item_count(s, a.item) >= (tonumber(a.multiple) or 1) end
+    if ok and a.weapon then ok = State.has_item(s,a.weapon=="*" and nil or a.weapon,"weapon",a.bonus,a.tags) end
+    if ok and a.armour then ok = State.has_item(s,a.armour=="*" and nil or a.armour,"armour",a.bonus,a.tags) end
+    if ok and a.tool then ok = State.has_item(s,a.tool=="*" and nil or a.tool,"tool",a.bonus,a.tags) end
     if ok and a.shards then ok = s.shards >= self:value(a.shards) end
     if ok and a.ticks then ok = s.ticks >= self:value(a.ticks) end
     if ok and a.var then
@@ -67,6 +70,18 @@ function Game:condition(a)
     end
     if ok and a.emptyvar then ok = s.variables[a.emptyvar] == nil end
     if ok and a.flag then ok = s.flags[a.flag] == true end
+    if ok and a.blessing then ok = s.blessings[a.blessing] ~= nil end
+    if ok and a.curse then ok = s.curses[a.curse] ~= nil end
+    if ok and a.disease then ok = s.diseases and s.diseases[a.disease] ~= nil end
+    if ok and a.poison then ok = s.poisons and s.poisons[a.poison] ~= nil end
+    if ok and a.resurrection then ok = s.resurrection ~= nil end
+    if ok and a.book then ok = self.catalog.books[tostring(a.book)] and self.catalog.books[tostring(a.book)].installed end
+    if ok and a.ability then
+        local score=s.abilities[a.ability:gsub("^%l", string.upper)] or 0
+        if a.greaterthan then ok=score>self:value(a.greaterthan)
+        elseif a.lessthan then ok=score<self:value(a.lessthan)
+        elseif a.equals then ok=score==self:value(a.equals) end
+    end
     if ok and a.dead then ok = (s.stamina <= 0) == truth(a.dead, false) end
     return truth(a["not"], false) and not ok or ok
 end
@@ -81,17 +96,34 @@ function Game:mutate(name, a, direction)
         s.shards=0
         return
     end
-    local amount = self:value(a.amount or a.value or 1) * direction
+    if direction<0 and (a.item=="*" or a.weapon=="*" or a.armour=="*" or a.tool=="*") then
+        State.remove_matching_items(s,a)
+        return
+    end
+    local amount = self:value(a.amount or a.value or a.stamina or 1) * direction
     local ability = a.ability and a.ability:gsub("^%l", string.upper)
     if ability == "Stamina" then s.stamina = math.max(0, math.min(s.max_stamina, s.stamina + amount))
-    elseif ability == "Rank" then s.rank = math.max(0, s.rank + amount)
+    elseif ability == "Rank" then
+        s.rank = math.max(0, s.rank + amount)
+        s.max_stamina=math.max(1,s.max_stamina+amount); s.stamina=math.min(s.stamina,s.max_stamina)
     elseif ability then s.abilities[ability] = math.max(0, math.min(12, (s.abilities[ability] or 0) + amount))
     elseif a.shards or a.gold or name == "adjustmoney" then s.shards = math.max(0, s.shards + self:value(a.shards or a.gold or a.amount) * direction)
     elseif a.codeword then for _,v in ipairs(words(a.codeword)) do s.codewords[v] = direction > 0 or nil end
     elseif a.title then for _,v in ipairs(words(a.title)) do s.titles[v] = direction > 0 or nil end
     elseif a.god then s.gods[a.god] = direction > 0 or nil
     elseif a.flag then s.flags[a.flag] = direction > 0 or nil
-    elseif a.item or a.name then if direction > 0 then State.add_item(s,item_from(a)) else State.remove_item(s,a.item or a.name,self:value(a.multiple or 1)) end
+    elseif a.blessing then s.blessings[a.blessing]=direction>0 and (tonumber(a.bonus) or true) or nil
+    elseif a.curse then s.curses[a.curse]=direction>0 and true or nil
+    elseif a.disease then s.diseases=s.diseases or {}; s.diseases[a.disease]=direction>0 and true or nil
+    elseif a.poison then s.poisons=s.poisons or {}; s.poisons[a.poison]=direction>0 and true or nil
+    elseif a.resurrection then s.resurrection=direction>0 and State.copy(a) or nil
+    elseif a.item or a.name or a.weapon or a.armour or a.tool then
+        local itemname=a.item or a.name or a.weapon or a.armour or a.tool
+        if direction > 0 then
+            local item=item_from(a); item.name=itemname
+            item.weapon=a.weapon~=nil or item.weapon; item.armour=a.armour~=nil or item.armour; item.tool=a.tool~=nil
+            State.add_item(s,item)
+        else State.remove_matching_items(s,a,self:value(a.multiple or 1)) end
     end
 end
 
@@ -134,6 +166,33 @@ end
 -- attack deals the entire amount by which (dice + COMBAT) beats Defence.
 local function combat_damage(roll, defence)
     return math.max(0, roll - defence)
+end
+
+local function range_matches(spec, value)
+    if not spec then return true end
+    local lo,hi=spec:match("^(%-?%d+)%-(%-?%d+)$")
+    if lo then return value>=tonumber(lo) and value<=tonumber(hi) end
+    lo,hi=spec:match("^(%-?%d+),(%-?%d+)$")
+    if lo then return value==tonumber(lo) or value==tonumber(hi) end
+    lo=spec:match("^(%-?%d+)%+$")
+    if lo then return value>=tonumber(lo) end
+    return value==tonumber(spec)
+end
+
+local function pair_fight_nodes(root)
+    local fights,damage,rounds,flees={},{},{},{}
+    local function visit(node)
+        if type(node)~="table" then return end
+        if node.name=="fight" then fights[#fights+1]=node
+        elseif node.name=="fightdamage" then damage[#damage+1]=node
+        elseif node.name=="fightround" then rounds[#rounds+1]=node
+        elseif node.name=="flee" then flees[#flees+1]=node end
+        for _,child in ipairs(node.children or {}) do visit(child) end
+    end
+    visit(root)
+    for i,fight in ipairs(fights) do
+        fight.fightdamage=damage[i]; fight.fightround=rounds[i]; fight.flee_node=flees[i]
+    end
 end
 
 function Game:check_adjustment(node)
@@ -183,6 +242,48 @@ function Game:attach_check_branch(node)
     if check then check.branches[#check.branches+1] = node end
 end
 
+function Game:open_market(node, message)
+    self.actions={}; self.text={message or "Choose a transaction."}
+    local function visit(parent)
+        for _,child in ipairs(parent.children or {}) do
+            if type(child)=="table" then
+                local a=child.attr
+                if child.name=="item" or child.name=="weapon" or child.name=="armour" or child.name=="tool" then
+                    if child.name~="item" then a[child.name]=true end
+                    if a.buy then
+                        self:add_action("Buy "..(a.name or "item").." ("..self:value(a.buy).." shards)","buy",
+                            {attr=a,node=child,cost=self:value(a.buy),market=node})
+                    end
+                    if a.sell then
+                        self:add_action("Sell "..(a.name or "item").." ("..self:value(a.sell).." shards)","sell",
+                            {attr=a,node=child,cost=self:value(a.sell),market=node})
+                    end
+                elseif child.name=="buy" or child.name=="sell" then
+                    local cost=self:value(a.price or a.shards or a.amount or 0)
+                    self:add_action((child.name=="buy" and "Buy " or "Sell ")..(a.name or a.item or plain(child))..
+                        " ("..cost.." shards)",child.name,{attr=a,node=child,cost=cost,market=node})
+                else visit(child) end
+            end
+        end
+    end
+    visit(node)
+end
+
+function Game:apply_affliction(kind, node)
+    local a=node.attr; local collection=kind=="curse" and self.state.curses or
+        kind=="disease" and self.state.diseases or self.state.poisons
+    collection[a.name or kind]=true
+    for _,child in ipairs(node.children or {}) do
+        if type(child)=="table" and child.name=="effect" and child.attr.ability then
+            local names=child.attr.ability=="*" and State.ability_names or {ability_key(child.attr.ability)}
+            for _,ability in ipairs(names) do
+                if child.attr.target then self.state.abilities[ability]=self:value(child.attr.target)
+                else self.state.abilities[ability]=math.max(1,math.min(12,(self.state.abilities[ability] or 0)+self:value(child.attr.bonus or 0))) end
+            end
+        end
+    end
+end
+
 function Game:walk(node, enabled)
     self.steps=self.steps+1; if self.steps > 10000 then error("section execution limit exceeded") end
     if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=node:gsub("%s+"," ") end return end
@@ -214,28 +315,89 @@ function Game:walk(node, enabled)
     elseif n=="adjust" or n=="adjustmoney" then self:mutate(n,a,1)
     elseif n=="rest" then self.state.stamina=math.min(self.state.max_stamina,self.state.stamina+self:value(a.stamina or 0)); self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0))
     elseif n=="random" then
-        local candidates={}; for _,c in ipairs(node.children) do if type(c)=="table" and c.name=="outcome" then candidates[#candidates+1]=c end end
-        if #candidates>0 then self:walk(candidates[self.random(#candidates)],true) end; return
+        if not a.flag or self.state.flags[a.flag] then
+            self:add_action(plain(node)~="" and plain(node) or "Roll dice","random",node)
+            if truth(a.force,true) then self:pause_section() end
+        end
+        return
     elseif n=="difficulty" or n=="rankcheck" then
         self:add_check(node)
+        if truth(a.force,true) then
+            self:pause_section()
+            for _,child in ipairs(node.children or {}) do
+                if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
+            end
+        end
         return
-    elseif (n=="success" or n=="failure") and not self.resolving_check then
-        self:attach_check_branch(node)
-        return
-    elseif (n=="success" or n=="failure") and a.section then
-        local fallback=(n=="success" and "Successful roll" or "Failed roll")
-        self:add_action(plain(node)~="" and plain(node) or fallback,"goto",a)
+    elseif n=="success" or n=="failure" then
+        local result=self.state.variables[a.var or "*difficulty*"] or 0
+        if (n=="success")~=(result>0) then return end
+        if a.section then
+            local fallback=(n=="success" and "Successful roll" or "Failed roll")
+            self:add_action(plain(node)~="" and plain(node) or fallback,"goto",a)
+            self:pause_section()
+        else
+            for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+        end
         return
     elseif n=="outcomes" then
+        local value=self.state.variables[a.var or "*random*"] or self.last_roll
         for _,c in ipairs(node.children or {}) do
-            if type(c)=="table" and (c.name=="success" or c.name=="failure") then self:attach_check_branch(c) end
+            if type(c)=="table" and c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr) then
+                self:walk(c,true); break
+            end
         end
+        return
+    elseif n=="outcome" then
+        for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+        return
+    elseif n=="fightdamage" or n=="fightround" or n=="flee" then
+        -- Parsed up front and owned by the corresponding fight, as in FightNode.hookupNodes().
         return
     elseif n=="fight" then
         self:add_action("Fight "..(a.name or "enemy"),"fight",node)
         self:pause_section()
         return
-    elseif n=="market" or n=="trade" then self:add_action(plain(node)~="" and plain(node) or "Open market","market",node); return
+    elseif n=="return" then
+        if #self.state.history>0 then self:add_action(plain(node)~="" and plain(node) or "Return","return",a) end
+        if truth(a.force,true) then self:pause_section() end
+        return
+    elseif n=="training" then
+        self:add_action(plain(node)~="" and plain(node) or ("Train "..tostring(a.ability or "ability")),"training",node)
+        self:pause_section(); return
+    elseif n=="resurrection" then
+        if a.section then self:add_action(plain(node)~="" and plain(node) or "Arrange resurrection","resurrection",a)
+        elseif self.state.stamina<=0 and self.state.resurrection then self:add_action(plain(node)~="" and plain(node) or "Use resurrection","resurrect",self.state.resurrection) end
+        return
+    elseif n=="itemcache" or n=="moneycache" then
+        local key=a.name; self.state.caches[key]=self.state.caches[key] or {items={},shards=0}
+        self:add_action(a.text or plain(node) or "Open cache","cache",{key=key,node=node}); return
+    elseif n=="transfer" then
+        local source=a.from and self.state.caches[a.from]
+        local target=a.to and a.to~="null" and (self.state.caches[a.to] or {items={},shards=0}) or nil
+        if a.to and a.to~="null" then self.state.caches[a.to]=target end
+        if source then
+            if a.shards=="*" then self.state.shards=self.state.shards+(source.shards or 0); source.shards=0 end
+            for _,item in ipairs(source.items or {}) do State.add_item(self.state,item) end; source.items={}
+        elseif target then
+            if a.shards=="*" then target.shards=(target.shards or 0)+self.state.shards; self.state.shards=0 end
+            local moved=State.remove_matching_items(self.state,a,tonumber(a.limit) or math.huge)
+            for _,item in ipairs(moved) do table.insert(target.items,item) end
+        end
+        return
+    elseif n=="curse" or n=="disease" or n=="poison" then
+        self:apply_affliction(n,node)
+    elseif n=="while" then
+        local guard=0
+        while self.state.variables[a.var] and self.state.variables[a.var]~=0 and guard<100 do
+            guard=guard+1
+            for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+        end
+        return
+    elseif n=="market" or n=="trade" then
+        self:add_action(plain(node)~="" and plain(node) or "Open market","market",node)
+        self:pause_section()
+        return
     elseif n=="buy" or n=="sell" then
         local cost=self:value(a.price or a.shards or a.amount or 0)
         local label=(n=="buy" and "Buy " or "Sell ")..(a.name or a.item or plain(node)).." ("..cost.." shards)"
@@ -266,6 +428,7 @@ function Game:load(book, section)
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
     self.pending_checks={}; self.checks_by_var={}
+    pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
     self.state.pending={kind="section",book=self.state.book,section=self.state.section}
@@ -308,12 +471,17 @@ function Game:choose(index)
             end
         end
         self.actions=remaining
-        self.resolving_check=true
-        for _,branch in ipairs(action.data.branches) do
-            if (branch.name=="success") == success then self:walk(branch,true) end
-        end
-        self.resolving_check=false
+        if truth(a.force,true) then self:resume_section() end
         return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="random" then
+        local node,a=action.data,action.data.attr
+        local roll=roll_dice(self,tonumber(a.dice) or 2)+self:check_adjustment(node)
+        self.last_roll=roll; self.state.variables[a.var or "*random*"]=roll
+        if a.flag then self.state.flags[a.flag]=nil end
+        self.text[#self.text+1]="\n\nRolled "..tostring(roll).."."
+        self.actions={}
+        if truth(a.force,true) then self:resume_section() end
+        return {title="Roll result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="goto" then
         local a=action.data
         if truth(a.pay,a.shards~=nil) then self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0)); if a.item then State.remove_item(self.state,a.item,1) end end
@@ -330,9 +498,40 @@ function Game:choose(index)
             local weapons={Priest="mace",Mage="staff",Rogue="sword",Troubadour="sword",Warrior="battle-axe",Wayfarer="spear"}
             State.add_item(self.state,{name=weapons[p[1]],weapon=true}); State.add_item(self.state,{name="map"})
         end
+        table.insert(self.state.history,{book=self.state.book,section=self.state.section})
         return self:load(a.book or self.state.book,a.section)
+    elseif action.kind=="return" then
+        local destination=table.remove(self.state.history)
+        if not destination then return nil,"There is no previous section." end
+        return self:load(destination.book,destination.section)
+    elseif action.kind=="training" then
+        local a=action.data.attr; local ability=ability_key(a.ability)
+        local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
+        local old_score=ability and self.state.abilities[ability] or 0
+        if ability and ability~="?" and roll>(self.state.abilities[ability] or 0) then
+            self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1)
+        end
+        self.state.variables.exp=roll-old_score
+        if a.var then self.state.variables[a.var]=roll end
+        self.text[#self.text+1]="\n\nTraining roll: "..roll.."."
+        self.actions={}; self:resume_section()
+        return {title="Training result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="resurrection" then
+        self.state.resurrection=State.copy(action.data)
+        self.actions={}; self:resume_section()
+        return {title="Resurrection arranged",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="resurrect" then
+        local a=action.data; self.state.resurrection=nil
+        self.state.stamina=math.max(1,self.state.stamina)
+        if a.shards then self.state.shards=math.max(0,self.state.shards-self:value(a.shards)) end
+        return self:load(a.book or self.state.book,a.section)
+    elseif action.kind=="cache" then
+        local cache=self.state.caches[action.data.key]
+        local lines={"Stored shards: "..tostring(cache.shards or 0),"Stored items:"}
+        for _,item in ipairs(cache.items or {}) do lines[#lines+1]="• "..item.name end
+        return {title=action.data.key,text=table.concat(lines,"\n"),actions=self.actions,image=self.image}
     elseif action.kind=="fight" then
-        local a=action.data.attr
+        local fight_node=action.data; local a=fight_node.attr
         local enemy_stamina=self:value(a.stamina or a.endurance or 1)
         local enemy_defence=self:value(a.defence or 0)
         local enemy_combat=self:value(a.combat or a.attack or 0)
@@ -358,11 +557,29 @@ function Game:choose(index)
                 local roll=roll_dice(self,2)+enemy_combat
                 local damage=combat_damage(roll,player_defence)
                 if damage>0 then
-                    if a.abilitydamaged and a.abilitydamaged:lower()~="stamina" then
+                    local replacement=fight_node.fightdamage and fight_node.fightdamage.attr.type and
+                        fight_node.fightdamage.attr.type:match("^repl")
+                    if replacement then
+                        -- Replacement damage nodes own the damage; their common authored form
+                        -- removes one randomly selected ability point per successful hit.
+                        local abilities=State.ability_names
+                        local ability=abilities[self.random(#abilities)]
+                        self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-1)
+                    elseif a.abilitydamaged and a.abilitydamaged:lower()~="stamina" then
                         local ability=ability_key(a.abilitydamaged)
                         self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-damage)
                     else
                         self.state.stamina=math.max(0,self.state.stamina-damage)
+                    end
+                    if fight_node.fightdamage then
+                        local function damage_effect(node)
+                            if type(node)~="table" then return end
+                            if node.name=="tick" then self:mutate("tick",node.attr,1)
+                            elseif node.name=="gain" then self:mutate("gain",node.attr,1)
+                            elseif node.name=="lose" and not replacement then self:mutate("lose",node.attr,-1) end
+                            for _,child in ipairs(node.children or {}) do damage_effect(child) end
+                        end
+                        damage_effect(fight_node.fightdamage)
                     end
                 end
                 local suffix=enemy_attacks>1 and string.format(" (attack %d)",attack_number) or ""
@@ -394,8 +611,7 @@ function Game:choose(index)
         self:resume_section()
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="market" then
-        self.actions={}; self.text={"Choose a transaction."}
-        for _,child in ipairs(action.data.children) do self:walk(child,true) end
+        self:open_market(action.data)
         return {title="Market",text=table.concat(self.text),actions=self.actions}
     elseif action.kind=="buy" or action.kind=="sell" then
         local a,cost=action.data.attr,action.data.cost
@@ -407,8 +623,12 @@ function Game:choose(index)
             if not State.remove_item(self.state,name,1) then return nil,"You do not have that item." end
             self.state.shards=self.state.shards+cost
         end
-        self.text={action.kind=="buy" and ("Bought "..name..".") or ("Sold "..name..".")}; self.actions={}
-        for _,child in ipairs(action.data.node.children) do self:walk(child,true) end
+        local message=action.kind=="buy" and ("Bought "..name..".") or ("Sold "..name..".")
+        if action.data.market then self:open_market(action.data.market,message)
+        else
+            self.text={message}; self.actions={}
+            for _,child in ipairs(action.data.node.children) do self:walk(child,true) end
+        end
         return {title="Market",text=table.concat(self.text),actions=self.actions}
     end
     return nil,"Unsupported interaction: "..tostring(action.kind)

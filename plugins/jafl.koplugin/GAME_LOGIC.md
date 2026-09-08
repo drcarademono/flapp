@@ -69,3 +69,35 @@ screen and no display of mutually exclusive win and loss destinations.
 The plugin autosaves after rendering the resulting screen, including all combat
 damage and post-combat recovery effects which executed before the next blocking
 action.
+
+## Other Java game systems
+
+The same ordered interpreter handles the rest of the playable XML vocabulary:
+
+- **Conditions:** codewords (including AND/OR lists), titles, gods, profession,
+  gender, inventory, weapons, armour, tools, money, ticks, variables, flags,
+  blessings, curses, diseases, poisons, resurrection, installed books, abilities,
+  negation, and alive/dead state.
+- **Character effects:** ability, Rank, maximum/current Stamina, money, codeword,
+  title, god, flag, blessing, curse, disease, poison, resurrection and inventory
+  gains/losses. Wildcard inventory and money losses are supported.
+- **Rolls and outcomes:** authored dice counts and adjustments, stored roll
+  variables, numeric single/range/or/plus outcome ranges, difficulty and Rank
+  checks, and success/failure branches.
+- **Navigation:** forced and optional gotos, cross-book travel, alive/dead routes,
+  section history, and return actions.
+- **Economy:** item/weapon/armour/tool buy and sell entries, affordability and
+  ownership checks, repeated market transactions, and persistent item/money
+  caches and transfers.
+- **Advancement and death:** training rolls, capped ability increases,
+  resurrection arrangements and consumption, and authored post-death recovery.
+- **Fight extensions:** pre-damage, alternate Defence, alternate damaged ability,
+  multiple attacks, player-first control, flee thresholds, damage hooks,
+  replacement damage, and fight-associated round/damage/flee nodes. Associated
+  nodes are paired before execution, mirroring `FightNode.hookupNodes()` rather
+  than accidentally running as ordinary post-fight content.
+
+Pure presentation/container tags (`section`, `p`, headings, emphasis, boxes,
+tables, text and grouping nodes) recurse through their children while preserving
+mixed-content order. Images are resolved by the content catalog and shown by the
+KOReader view.

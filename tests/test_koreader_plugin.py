@@ -66,6 +66,21 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("if a.staminato then", source)
         self.assertIn('if (a.shards=="*" or a.gold=="*") and direction<0', source)
 
+    def test_extended_java_game_systems_are_dispatched(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        state = (PLUGIN / "core" / "state.lua").read_text()
+        for kind in ('action.kind=="random"', 'action.kind=="training"',
+                     'action.kind=="return"', 'action.kind=="resurrection"',
+                     'action.kind=="resurrect"', 'action.kind=="cache"'):
+            self.assertIn(kind, game)
+        self.assertIn("function Game:open_market", game)
+        self.assertIn("function Game:apply_affliction", game)
+        self.assertIn("local function range_matches", game)
+        self.assertIn("local function pair_fight_nodes", game)
+        self.assertIn("function State.remove_matching_items", state)
+        for field in ("diseases = {}", "poisons = {}", "caches = {}", "history = {}"):
+            self.assertIn(field, state)
+
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
 
