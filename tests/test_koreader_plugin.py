@@ -22,6 +22,11 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertNotIn("javax.swing", source)
         self.assertIn('require("ui/', source)
 
+    def test_skill_check_branches_use_the_check_group(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("check.branches[#check.branches+1] = node", source)
+        self.assertNotIn("check.data.branches[#check.data.branches+1] = node", source)
+
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
 

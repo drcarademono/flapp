@@ -135,7 +135,7 @@ end
 function Game:attach_check_branch(node)
     local check = node.attr.var and self.checks_by_var[node.attr.var]
         or self.pending_checks[#self.pending_checks]
-    if check then check.data.branches[#check.data.branches+1] = node end
+    if check then check.branches[#check.branches+1] = node end
 end
 
 function Game:walk(node, enabled)
