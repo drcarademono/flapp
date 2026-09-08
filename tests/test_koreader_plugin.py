@@ -167,7 +167,7 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("if (self.paragraph_depth or 0)>0 then", source)
         self.assertIn("self.pause_after_paragraph=true", source)
         self.assertIn("if self.paragraph_depth==0 and self.pause_after_paragraph then", source)
-        self.assertIn("self.paragraph_depth=0; self.conditional_depth=0; self.deferred_block=false; self.pause_after_paragraph=false", source)
+        self.assertIn("self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false", source)
         self.assertIn("self.pause_before_outcomes=true", source)
         self.assertIn('elseif n=="outcomes" then\n        if self.pause_before_outcomes then', source)
         self.assertIn("function Game:resume_pending_check_children()", source)
@@ -197,7 +197,7 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_inactive_conditions_keep_their_java_document_text(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("function Game:goto_label(node)", source)
-        self.assertIn('if node.name=="goto" then', source)
+        self.assertIn('if n=="goto" then return self:goto_label(node) end', source)
         self.assertIn("if matched then self:walk(child,true) else self:render_node(child) end", source)
         self.assertIn("if not branch_taken then self:walk(child,true) else self:render_node(child) end", source)
         section = (ROOT / "book5" / "150.xml").read_text()
@@ -213,6 +213,22 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertNotIn('else self:pause_section() end', source[source.index('elseif n=="goto" then'):source.index('elseif n=="set" then')])
         section = (ROOT / "book2" / "20.xml").read_text()
         self.assertIn('and <goto section="118"/>.', section)
+
+    def test_java_empty_node_text_generators_are_ported(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:default_node_text(node)", source)
+        for node in ("random", "difficulty", "rankcheck", "reroll", "training",
+                     "lose", "tick", "image", "extrachoice", "field"):
+            self.assertIn(f'n=="{node}"', source)
+        self.assertIn('n=="item" or n=="weapon" or n=="armour" or n=="tool"', source)
+        self.assertIn('node.name=="group" or node.name=="effect" or node.name=="tradeevent"', source)
+        self.assertIn('self:add_action(label,"random",node)', source)
+        self.assertIn('description=ea.ability:upper().." "', source)
+
+    def test_text_parsing_audit_tracks_platform_only_differences(self) -> None:
+        audit = (PLUGIN / "TEXT_PARSING_AUDIT.md").read_text()
+        self.assertIn("Java-compatible plain-text semantics now implemented", audit)
+        self.assertIn("platform presentation differences", audit)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)

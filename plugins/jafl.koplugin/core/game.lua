@@ -232,17 +232,7 @@ function Game:add_check(node)
     local a = node.attr
     if a.flag and not self.state.flags[a.flag] then return end
 
-    local label = plain(node)
-    if label == "" then
-        if node.name == "rankcheck" then
-            local dice = tonumber(a.dice) or 1
-            label = "Roll "..dice..(dice == 1 and " die" or " dice")
-        else
-            local names = {}
-            for _, name in ipairs(words(a.ability)) do names[#names+1] = name:upper() end
-            label = "Make a "..table.concat(names, " or ").." roll at Difficulty "..tostring(a.level)
-        end
-    end
+    local label = self:node_text(node)
 
     local check = { node=node, branches={} }
     local abilities = node.name == "difficulty" and words(a.ability) or {}
@@ -331,6 +321,88 @@ function Game:is_new_sentence()
     return text:sub(-1):match("[%.%!%?%d]")~=nil
 end
 
+local number_words={"zero","one","two","three","four","five","six"}
+local function numbered_dice(count)
+    count=tonumber(count) or 1
+    local amount=number_words[count+1] or tostring(count)
+    return amount..(count==1 and " die" or " dice")
+end
+local function random_dice(count)
+    count=tonumber(count) or 2
+    if count==1 then return "one die" end
+    if count==2 then return "two dice" end
+    return tostring(count).." dice"
+end
+
+function Game:default_node_text(node)
+    local n,a=node.name,node.attr or {}
+    local lead=self:is_new_sentence()
+    if n=="goto" then return self:goto_label(node) end
+    if n=="random" then return (lead and "Roll " or "roll ")..random_dice(a.dice or 2) end
+    if n=="difficulty" then
+        local abilities=words(a.ability)
+        local name=#abilities==1 and abilities[1]:upper() or ""
+        return (lead and "Make a " or "make a ")..name.." roll at Difficulty "..tostring(a.level or "MISSING")
+    end
+    if n=="rankcheck" then
+        local dice=tonumber(a.dice) or 1
+        local text=(lead and "Roll " or "roll ")..numbered_dice(dice)
+        local add=tonumber(a.add) or 0
+        if add>0 then text=text.." and add "..(number_words[add+1] or tostring(add))
+        elseif add<0 then text=text.." and subtract "..(number_words[-add+1] or tostring(-add)) end
+        return text
+    end
+    if n=="reroll" then return lead and "Roll again" or "roll again" end
+    if n=="training" then return (lead and "Roll " or "roll ")..numbered_dice(a.dice or 2) end
+    if n=="lose" then
+        if a.codeword then return (lead and "Erase" or "erase").." the codeword "..a.codeword end
+        if a.stamina then
+            local amount=tostring(a.stamina)
+            return (lead and "Lose " or "lose ")..amount.." Stamina point"..((tonumber(amount)~=1) and "s" or "")
+        end
+        if a.item or a.weapon or a.armour or a.tool then return a.item or a.weapon or a.armour or a.tool end
+        if a.shards then local value=tonumber(a.shards); return value==1 and "1 Shard" or tostring(a.shards).." Shards" end
+        return a.curse or a.title
+    end
+    if n=="tick" then
+        if a.codeword then return (lead and "Tick" or "tick").." the codeword "..a.codeword end
+        if a.shards and self:value(a.shards)>0 then return tostring(a.shards).." Shards" end
+        if a.title then return a.title end
+        if not a.ability and not a.god and not a.name and not a.blessing then return "put a tick there now" end
+    end
+    if n=="item" or n=="weapon" or n=="armour" or n=="tool" then
+        local name=a.name or a.item or a[n]
+        local effects={}
+        for _,child in ipairs(node.children or {}) do
+            if type(child)=="table" and child.name=="effect" then
+                local ea=child.attr or {}
+                local description=ea.text or ea.description
+                if not description and ea.ability and ea.bonus then
+                    local bonus=tonumber(ea.bonus)
+                    description=ea.ability:upper().." "..(bonus and bonus>=0 and "+" or "")..tostring(ea.bonus)
+                elseif not description and ea.ability and ea.type=="use" then
+                    description=ea.ability:upper().." +1"
+                end
+                if description then effects[#effects+1]=description end
+            end
+        end
+        if name and #effects>0 then name=name.." ("..table.concat(effects,", ")..")" end
+        return name
+    end
+    if n=="image" then return "[illustration]" end
+    if n=="resurrection" then return a.text end
+    if n=="extrachoice" then return a.text end
+    if n=="field" then return (a.label or a.text or a.name).." " end
+    return nil
+end
+
+function Game:node_text(node)
+    local authored=plain(node)
+    if authored~="" then return authored end
+    if (self.hide_default_depth or 0)>0 or truth(node.attr and node.attr.hidden,false) then return nil end
+    return self:default_node_text(node)
+end
+
 function Game:goto_label(node)
     local label=plain(node)
     if label~="" then return label end
@@ -351,11 +423,19 @@ function Game:render_node(node)
         return
     end
     if truth(node.attr and node.attr.hidden,false) then return end
-    if node.name=="goto" then
-        self.text[#self.text+1]=self:goto_label(node)
-        return
+    local authored=plain(node)
+    local generated=authored=="" and self:node_text(node) or nil
+    if generated then
+        self.text[#self.text+1]=generated
+        if node.name=="goto" or node.name=="random" or node.name=="difficulty" or
+                node.name=="rankcheck" or node.name=="reroll" or node.name=="training" or
+                node.name=="lose" or node.name=="tick" or node.name=="image" or
+                node.name=="resurrection" or node.name=="extrachoice" or node.name=="field" then return end
     end
+    local hides=node.name=="group" or node.name=="effect" or node.name=="tradeevent"
+    if hides then self.hide_default_depth=(self.hide_default_depth or 0)+1 end
     for _,child in ipairs(node.children or {}) do self:render_node(child) end
+    if hides then self.hide_default_depth=self.hide_default_depth-1 end
     if node.name=="p" or node.name=="header" or node.name:match("^h%d$") then
         self.text[#self.text+1]="\n\n"
     end
@@ -391,18 +471,18 @@ function Game:walk(node, enabled)
         end
         return
     elseif n=="set" then self.state.variables[a.name or a.var]=self:value(a.value or a.amount)
-    elseif n=="tick" then self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
+    elseif n=="tick" then
+        if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
+        self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
     elseif n=="gain" then self:mutate(n,a,1)
-    elseif n=="lose" then self:mutate(n,a,-1)
+    elseif n=="lose" then
+        if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
+        self:mutate(n,a,-1)
     elseif n=="adjust" or n=="adjustmoney" then self:mutate(n,a,1)
     elseif n=="rest" then self.state.stamina=math.min(self.state.max_stamina,self.state.stamina+self:value(a.stamina or 0)); self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0))
     elseif n=="random" then
         if not a.flag or self.state.flags[a.flag] then
-            local label=plain(node)
-            if label=="" then
-                local dice=tonumber(a.dice) or 2
-                label="Roll "..(dice==1 and "one die" or dice==2 and "two dice" or (dice.." dice"))
-            end
+            local label=self:node_text(node)
             self.text[#self.text+1]=label
             self:add_action(label,"random",node)
             if truth(a.force,true) then self:pause_section() end
@@ -424,6 +504,11 @@ function Game:walk(node, enabled)
             end
         end
         return
+    elseif n=="reroll" then
+        local label=self:node_text(node)
+        self.text[#self.text+1]=label
+        self:add_action(label,"random",node)
+        self:pause_section(); return
     elseif n=="success" or n=="failure" then
         local result=self.state.variables[a.var or "*difficulty*"] or 0
         if (n=="success")~=(result>0) then return end
@@ -479,11 +564,15 @@ function Game:walk(node, enabled)
         if truth(a.force,true) then self:pause_section() end
         return
     elseif n=="training" then
-        self:add_action(plain(node)~="" and plain(node) or ("Train "..tostring(a.ability or "ability")),"training",node)
+        local label=self:node_text(node)
+        self.text[#self.text+1]=label
+        self:add_action(label,"training",node)
         self:pause_section(); return
     elseif n=="resurrection" then
-        if a.section then self:add_action(plain(node)~="" and plain(node) or "Arrange resurrection","resurrection",a)
-        elseif self.state.stamina<=0 and self.state.resurrection then self:add_action(plain(node)~="" and plain(node) or "Use resurrection","resurrect",self.state.resurrection) end
+        local label=self:node_text(node) or (a.section and "Arrange resurrection" or "Use resurrection")
+        if plain(node)=="" and label then self.text[#self.text+1]=label end
+        if a.section then self:add_action(label,"resurrection",a)
+        elseif self.state.stamina<=0 and self.state.resurrection then self:add_action(label,"resurrect",self.state.resurrection) end
         return
     elseif n=="itemcache" or n=="moneycache" then
         local key=a.name; self.state.caches[key]=self.state.caches[key] or {items={},shards=0}
@@ -518,12 +607,20 @@ function Game:walk(node, enabled)
         local cost=self:value(a.price or a.shards or a.amount or 0)
         local label=(n=="buy" and "Buy " or "Sell ")..(a.name or a.item or plain(node)).." ("..cost.." shards)"
         self:add_action(label,n,{attr=a,node=node,cost=cost}); return
-    elseif n=="image" then self.image=self.catalog:asset_path(a.book or self.state.book,a.file or a.name); return
+    elseif n=="image" then
+        local label=self:node_text(node)
+        if label then self.text[#self.text+1]=label end
+        self.image=self.catalog:asset_path(a.book or self.state.book,a.file or a.name); return
+    end
+    if (n=="item" or n=="weapon" or n=="armour" or n=="tool" or n=="extrachoice" or n=="field") and plain(node)=="" then
+        local label=self:node_text(node); if label then self.text[#self.text+1]=label end
     end
     local is_paragraph=n=="p"
     local is_conditional=n=="if" or n=="elseif" or n=="else"
+    local hides_child_defaults=n=="group" or n=="effect" or n=="tradeevent"
     if is_paragraph then self.paragraph_depth=(self.paragraph_depth or 0)+1 end
     if is_conditional then self.conditional_depth=(self.conditional_depth or 0)+1 end
+    if hides_child_defaults then self.hide_default_depth=(self.hide_default_depth or 0)+1 end
     local branch_taken=false
     local in_chain=false
     for _,child in ipairs(node.children or {}) do
@@ -544,6 +641,7 @@ function Game:walk(node, enabled)
             in_chain=false; branch_taken=false; self:walk(child,enabled)
         end
     end
+    if hides_child_defaults then self.hide_default_depth=self.hide_default_depth-1 end
     if n=="p" or n=="header" or n:match("^h%d$") then self.text[#self.text+1]="\n\n" end
     if is_paragraph then
         self.paragraph_depth=self.paragraph_depth-1
@@ -579,7 +677,7 @@ function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
-    self.paragraph_depth=0; self.conditional_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
+    self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)

@@ -187,6 +187,14 @@ It uses “Turn to” at the start of a sentence and “turn to” when embedded
 ordinary prose. For example, the source phrase `and <goto section="118"/>` in
 book 2, section 20 is displayed as “and turn to 118.”
 
+The same shared display generator now supplies Java-compatible text for empty
+`random`, `difficulty`, `rankcheck`, `reroll`, `training`, `lose`, `tick`, item,
+weapon, armour, tool, image, resurrection, extra-choice, and field elements.
+Sentence-sensitive commands use the already-rendered document context. Default
+text is suppressed beneath `group`, `effect`, and `tradeevent`, matching those
+Java parents' `hideChildContent()` behavior. Authored element content always
+takes precedence over a generated label.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

@@ -17,19 +17,26 @@ while executing it. `render_node()` now provides a display-only path around
 inactive conditions and blocking gotos, but this emulates Java's two phases
 rather than providing an equivalent document model.
 
-The most important remaining differences are:
+Java-compatible plain-text semantics now implemented include authored and
+generated text for empty gotos, random/difficulty/rank/training/reroll actions,
+losses, ticks, inventory elements, images, resurrection labels, extra choices,
+and fields. Generated wording uses the current sentence position. Java's
+`hideChildContent()` rule is applied while generating defaults below groups,
+effects, and trade events.
+
+The remaining differences are primarily platform presentation differences:
 
 1. KOReader discards inline styling and Java's enabled/disabled visual state.
-2. Several Java nodes generate default text when their XML element is empty;
-   KOReader currently does this only for some interactive nodes.
+2. Some generated descriptions depend on Java-only rich domain objects (most
+   notably full resurrection and complex item/use-effect descriptions); KOReader
+   provides the authored label and common ability-effect form.
 3. Java has node-specific layout for paragraphs, headings, outcomes, choices,
    markets, fields, groups, and combat details. KOReader flattens most of these
    into prose and separate action buttons.
 4. Whitespace condensation is similar, but happens at different stages and is
    therefore not identical at every element boundary.
-5. Java has presentation-only containers whose children must be hidden;
-   KOReader's display-only traversal honors `hidden=` but not every Java
-   `hideChildContent()` override.
+5. KOReader represents inline Java actions as ordinary prose plus accessible,
+   paginated buttons rather than clickable styled spans.
 
 ## Common XML and whitespace pipeline
 
@@ -70,13 +77,13 @@ missing words, but the visual result is not an exact Java reproduction.
 | `StyleNode` (`b`, `i`, `u`, `caps`) | Maintains a nested active-style stack and forwards styled text. | Flattens children and loses all styles. |
 | `HeadingNode` (`h1`–`h4`) | Bold, scaled text with heading spacing and newline. | Plain text plus a generic double newline. |
 | `TextNode` | Captures a reusable `StyledTextList` and preserves styles. | Treated as an ordinary container; no reusable styled-text object. |
-| `GroupNode` | Captures/highlights group text and hides child content from parent rendering. | No group-specific presentation; display-only recursion can expose suppressed children. |
+| `GroupNode` | Captures/highlights group text and hides generated child content from parent rendering. | Generated child defaults are now suppressed; group highlighting remains unavailable. |
 | `RowNode` and box nodes | Build structured rows and boxes. | Flattened; no row or box layout. |
-| `FieldNode` | Emits a label, embedded Swing text field, and newline. | No embedded editable field in section prose; KOReader uses separate screens. |
+| `FieldNode` | Emits a label, embedded Swing text field, and newline. | Emits the label and spacing; no embedded editable Swing field. KOReader uses separate screens. |
 | `SectionViewNode` | Creates styled actionable section-view text. | Generic container; no equivalent section-view action. |
-| `ExtraChoice` | Stores styled text for a persistent extra choice and can generate fallback text from its destination. | No dedicated extra-choice presentation or persistence path; generic traversal cannot reproduce Java's generated action. |
+| `ExtraChoice` | Stores styled text for a persistent extra choice and can use its `text=` fallback. | Authored or `text=` presentation is retained; persistence and inline action styling still differ. |
 | `WhileNode` | Adds its text once as enable-controlled document content; looping is an execution concern. | Child traversal occurs inside the execution loop, so visible child text can be appended repeatedly. |
-| `ImageNode` | Authored text is clickable; empty nodes generate italic `[illustration]`; image opens separately with a title. | Sets one section image path and returns. Authored image text and fallback marker are not rendered. |
+| `ImageNode` | Authored text is clickable; empty nodes generate italic `[illustration]`; image opens separately with a title. | Authored text or `[illustration]` is rendered and the image path is exposed; italics/clickable-span presentation differs. |
 
 ### Actions and generated text
 
@@ -84,26 +91,26 @@ missing words, but the visual result is not an exact Java reproduction.
 | --- | --- | --- |
 | `GotoNode` | Keeps authored text or generates sentence-aware `Turn to`/`turn to`, or a cross-book title, with underlined/bold spans. | Generated wording now matches; text is plain and duplicated as a separate button. Disabled-link appearance differs. |
 | `ChoiceNode` | Builds a description paragraph and separately wired goto, supports `[box]`, and highlights the description. | `plain()` flattens descendants into one button label; layout, styles, and description/destination separation are lost. |
-| `RandomNode` | Keeps authored text or generates sentence-aware `Roll/roll one die`, `two dice`, or *n* dice. | Generates dice wording but always starts empty-node text with capital `Roll`; no inline styling. |
-| `DifficultyNode` | Keeps text or generates sentence-aware `Make/make a ABILITY roll at Difficulty N`; only initial leaves are highlighted. | Generates capitalized fallback buttons; no lowercase inline fallback or partial-span style. Multiple abilities become separate buttons. |
-| `RankCheckNode` | Keeps text or generates sentence-aware rank/dice instructions with clickable leaves. | Uses the generic check path; wording/presentation is not exact. |
-| `RerollNode` | Keeps text or generates sentence-aware `Roll again`/`roll again`. | No dedicated reroll action or empty-node fallback. |
+| `RandomNode` | Keeps authored text or generates sentence-aware `Roll/roll one die`, `two dice`, or *n* dice. | Wording/capitalization now matches; action is a separate button without inline styling. |
+| `DifficultyNode` | Keeps text or generates sentence-aware `Make/make a ABILITY roll at Difficulty N`; only initial leaves are highlighted. | Generated wording/case matches; multiple abilities become separate accessible buttons and partial-span styling differs. |
+| `RankCheckNode` | Keeps text or generates sentence-aware rank/dice instructions with clickable leaves. | Generated dice/add/subtract wording matches; presentation uses a button. |
+| `RerollNode` | Keeps text or generates sentence-aware `Roll again`/`roll again`. | Generated text now matches and reuses the random-roll path; inline styling differs. |
 | `ReturnNode` | Makes authored text an enabled/highlighted return action. | Separate Return action when history exists; no Java inline style. |
-| `TrainingNode` | Empty nodes generate sentence-aware `Roll/roll ...`; authored content is highlighted. | Separate `Train ...` fallback; wording and inline presentation differ. |
-| `ResurrectionNode` | Keeps text or generates a styled resurrection description. | Uses `Arrange resurrection`/`Use resurrection` fallbacks, not Java's generated description. |
+| `TrainingNode` | Empty nodes generate sentence-aware `Roll/roll ...`; authored content is highlighted. | Generated dice wording now matches; inline presentation differs. |
+| `ResurrectionNode` | Keeps text or generates a styled resurrection description. | Authored/`text=` description is retained; fallback and rich resurrection-object wording can still differ. |
 
 ### State-changing inline nodes
 
 | Java node/function | Java presentation behavior | KOReader difference |
 | --- | --- | --- |
-| `LoseNode` | Highlights authored text. Empty nodes synthesize codeword, Stamina, item, Shard, curse, or title text; capitalization is sentence-aware and codewords italic. | Authored children are plain. Empty lose nodes generally mutate without generating Java's prose. |
-| `TickNode` | Keeps text or generates sentence-aware codeword/tick-box wording and tick-box styling. | Applies state and renders authored children, but lacks all defaults and tick-box visuals. |
-| `ItemNode` | Keeps text or generates a styled item/effect description with sentence capitalization. | Mutates inventory; empty item nodes do not generate Java's description. |
+| `LoseNode` | Highlights authored text. Empty nodes synthesize codeword, Stamina, item, Shard, curse, or title text; capitalization is sentence-aware and codewords italic. | Common generated wording is now present and sentence-aware; highlighting, italics, and uncommon domain-specific forms differ. |
+| `TickNode` | Keeps text or generates sentence-aware codeword/tick-box wording and tick-box styling. | Common codeword, Shard, title, and generic-tick defaults are present; tick-box visuals and specialized domain forms differ. |
+| `ItemNode` | Keeps text or generates a styled item/effect description. | Generates item names and common ability effects; complex chained/use-effect formatting and styles differ. |
 | `SetVarNode` | Renders authored text as enabled/highlighted inline content. | Applies state and renders ordinary prose. |
 | `RestNode` | Renders authored text as highlighted enabled content. | Applies effects; text is plain. |
 | `CurseNode` | Captures a styled reusable effect description. | Flattens text and does not retain the richer description. |
 | `TransferNode` | Highlights authored transfer text as one action. | Performs transfer and renders plain child prose. |
-| `EffectNode` / `TradeEventNode` | `hideChildContent()` prevents internal descriptions being duplicated in the parent. | No equivalent container rule beyond `hidden=`; display-only traversal may leak internal text. |
+| `EffectNode` / `TradeEventNode` | `hideChildContent()` prevents generated internal descriptions being duplicated in the parent. | Default generation is suppressed under these containers; Java-only reusable styled descriptions remain flattened. |
 
 ### Results, markets, and combat
 
@@ -117,11 +124,10 @@ missing words, but the visual result is not an exact Java reproduction.
 
 ## Text-specific behavioral risks
 
-1. **Empty action nodes:** empty `lose`, `tick`, `item`, `reroll`, image,
-   resurrection, or training nodes can act without Java's explanation.
-2. **Display-only leakage:** `render_node()` suppresses execution/actions but
-   recursively includes most visible children. Java groups, effects, or trade
-   events can hide content that KOReader may expose.
+1. **Complex generated descriptions:** chained items, specialized blessings,
+   curses, resurrection objects, and use effects can still be worded less richly.
+2. **While-node repetition:** execution and presentation are not fully separate,
+   so text inside an authored execution loop can still be appended repeatedly.
 3. **Whitespace boundaries:** Lua normalization occurs per stored string rather
    than per SAX accumulation event. Empty/style tags and adjacent whitespace-only
    nodes still need fixture coverage.
@@ -145,8 +151,9 @@ missing words, but the visual result is not an exact Java reproduction.
 1. Introduce presentation tokens (`text`, style, enabled state, action target)
    and build them fully before section execution. This removes the need for more
    special display-only coroutine cases.
-2. Port every Java empty-node text generator into shared Lua label functions.
-3. Add container metadata equivalent to `hideChildContent()`.
+2. Extend the shared generator for uncommon domain-object descriptions and
+   chained item alternatives as content fixtures require.
+3. Separate while-loop mutation from its one-time presentation pass.
 4. Render at least bold, italic, disabled, and action spans in KOReader while
    retaining paginated buttons as an accessibility fallback.
 5. Compare normalized Java and Lua presentation tokens in fixture tests for
