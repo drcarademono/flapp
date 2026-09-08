@@ -29,7 +29,8 @@ class KOReaderPluginTests(unittest.TestCase):
 
     def test_game_view_exposes_choices_and_map_inline(self) -> None:
         source = (PLUGIN / "ui" / "gameview.lua").read_text()
-        self.assertIn("for i,a in ipairs(self.game.actions) do", source)
+        self.assertIn("for i=first,last do", source)
+        self.assertIn("local a=self.game.actions[i]", source)
         self.assertIn('buttons_table=buttons', source)
         self.assertIn('text=_("Map")', source)
         self.assertIn('require("ui/widget/imageviewer")', source)
@@ -43,6 +44,10 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("text_font_size=BOOK_TEXT_SIZE", source)
         self.assertIn("font_bold=false", source)
         self.assertIn("text_size=BOOK_TEXT_SIZE", source)
+        self.assertIn("local ACTIONS_PER_PAGE=6", source)
+        self.assertIn("local page_count=math.max(1,math.ceil(action_count/ACTIONS_PER_PAGE))", source)
+        self.assertIn('text=_("Previous")', source)
+        self.assertIn('text=_("Next")', source)
 
     def test_combat_matches_java_damage_and_resumes_section(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()

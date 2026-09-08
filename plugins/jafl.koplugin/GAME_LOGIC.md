@@ -112,3 +112,10 @@ KOReader view.
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.
+
+Action menus are split into pages of at most six choices. Previous and Next
+controls appear only when another page exists, the title shows the current and
+total page numbers, and displayed choice numbers remain their stable global
+action indexes. Map, Sheet, and Close stay available on every page. This keeps
+large markets and other long choice lists within the screen while retaining
+touch and key-only navigation.
