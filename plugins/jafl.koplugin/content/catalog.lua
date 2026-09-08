@@ -57,12 +57,22 @@ function Catalog.new(root)
             key = key,
             title = listing[key .. ".Title"] or ("Book " .. key),
             path = path,
-            installed = exists(join(path, "book.ini")),
+            -- A playable content pack is identified by its section XML.  Older
+            -- plugin upgrades could omit book.ini while retaining every section,
+            -- which incorrectly made cross-book choices look unavailable.
+            installed = exists(join(path, "New.xml")),
             properties = ini(join(path, "book.ini")),
         }
     end
 
     return self
+end
+
+function Catalog:installed_books()
+    local result={}
+    for key,book in pairs(self.books) do if book.installed then result[#result+1]=book end end
+    table.sort(result,function(a,b) return tonumber(a.key)<tonumber(b.key) end)
+    return result
 end
 
 function Catalog:section_path(book, section)

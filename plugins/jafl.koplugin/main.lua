@@ -70,7 +70,7 @@ function JaFL:open(new_game)
         title = _("Fabled Lands"),
     }
 
-    self.game_view:start()
+    self.game_view:start(new_game and game:choose_starting_book() or nil)
 end
 
 function JaFL:addToMainMenu(menu_items)

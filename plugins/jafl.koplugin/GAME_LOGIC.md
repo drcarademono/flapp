@@ -30,6 +30,12 @@ suspends section execution on supported KOReader builds.
 - Before a profession has been selected there is no active adventurer, matching
   the Java application. The new-game template's initial 0/0 Stamina is therefore
   not treated as death, and all six profession choices remain available.
+- Java's `StartPanel` asks the player to choose an installed book before starting
+  a new game. KOReader now does the same: **New adventure** first lists every
+  installed book, then opens that book's `New.xml` profession selection. A book
+  is considered installed when its `New.xml` entry section exists, so all six
+  bundled books remain available even when upgrading from a package layout that
+  omitted optional metadata files.
 - A usable forced destination pauses execution. Therefore, in section 570, an
   adventurer who wins stops at section 148. An adventurer who dies cannot use
   section 148, continues through the authored recovery effects, and then stops

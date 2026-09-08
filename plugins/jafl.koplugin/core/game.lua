@@ -141,6 +141,14 @@ function Game:add_action(label, kind, data)
     return action
 end
 
+function Game:choose_starting_book()
+    self.text={}; self.actions={}; self.image=nil
+    for _,book in ipairs(self.catalog:installed_books()) do
+        self:add_action(book.title,"startbook",{book=book.key})
+    end
+    return {title="New adventure",text="Choose a book to start in.",actions=self.actions}
+end
+
 -- The desktop engine's ExecutableRunner stops at blocking actions (fights,
 -- forced gotos, and checks), then resumes at the following XML node.  A Lua
 -- coroutine gives us the same ordered execution without displaying or applying
@@ -459,7 +467,10 @@ end
 
 function Game:choose(index)
     local action=self.actions[index]; if not action then return nil,"Invalid choice" end
-    if action.kind=="skillcheck" then
+    if action.kind=="startbook" then
+        self.state.book=tostring(action.data.book); self.state.section="New"
+        return self:load(self.state.book,self.state.section)
+    elseif action.kind=="skillcheck" then
         local node,a=action.data.node,action.data.node.attr
         local adjustment=self:check_adjustment(node)
         local roll,score,success,description

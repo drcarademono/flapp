@@ -89,6 +89,17 @@ class KOReaderPluginTests(unittest.TestCase):
         for profession in ("Liana", "Andriel", "Chalor", "Marana", "Ignatius", "Astariel"):
             self.assertIn(f'<choice section="{profession}">', section)
 
+    def test_new_game_selects_an_installed_starting_book(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        catalog = (PLUGIN / "content" / "catalog.lua").read_text()
+        main = (PLUGIN / "main.lua").read_text()
+        self.assertIn("function Game:choose_starting_book()", game)
+        self.assertIn('action.kind=="startbook"', game)
+        self.assertIn('self.state.section="New"', game)
+        self.assertIn("function Catalog:installed_books()", catalog)
+        self.assertIn('installed = exists(join(path, "New.xml"))', catalog)
+        self.assertIn("new_game and game:choose_starting_book() or nil", main)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

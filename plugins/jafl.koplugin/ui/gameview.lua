@@ -10,8 +10,9 @@ local GameView=InputContainer:extend{}
 local BOOK_TEXT_SIZE=12
 local ACTIONS_PER_PAGE=6
 
-function GameView:start()
-    local result,err=self.game:load(self.game.state.book,self.game.state.section)
+function GameView:start(initial_result)
+    local result,err=initial_result
+    if not result then result,err=self.game:load(self.game.state.book,self.game.state.section) end
     if not result then UIManager:show(InfoMessage:new{text=_("Unable to start Fabled Lands:\n")..tostring(err)}); UIManager:close(self); return end
     self:render(result)
 end
