@@ -204,18 +204,45 @@ end
 
 local function pair_fight_nodes(root)
     local fights,damage,rounds,flees={},{},{},{}
-    local function visit(node)
+    local function visit(node,parent,index)
         if type(node)~="table" then return end
+        node._parent,node._index=parent,index
         if node.name=="fight" then fights[#fights+1]=node
         elseif node.name=="fightdamage" then damage[#damage+1]=node
         elseif node.name=="fightround" then rounds[#rounds+1]=node
         elseif node.name=="flee" then flees[#flees+1]=node end
-        for _,child in ipairs(node.children or {}) do visit(child) end
+        for child_index,child in ipairs(node.children or {}) do visit(child,node,child_index) end
     end
-    visit(root)
+    visit(root,nil,nil)
     for i,fight in ipairs(fights) do
         fight.fightdamage=damage[i]; fight.fightround=rounds[i]; fight.flee_node=flees[i]
     end
+end
+
+function Game:preview_after(node)
+    local original=self.text
+    local rendered={}
+    for i,value in ipairs(original) do rendered[i]=value end
+    self.text=rendered
+    local start=#rendered
+    local current=node
+    while current and current._parent do
+        local parent=current._parent
+        for i=(current._index or 0)+1,#(parent.children or {}) do self:render_node(parent.children[i]) end
+        if parent.name=="p" or parent.name=="header" or parent.name:match("^h%d$") then
+            self.text[#self.text+1]="\n\n"
+        end
+        current=parent
+        if current.name=="section" then break end
+    end
+    local tail={}
+    for i=start+1,#rendered do tail[#tail+1]=rendered[i] end
+    self.text=original
+    self.preview_text=table.concat(tail)
+end
+
+function Game:visible_text()
+    return table.concat(self.text)..(self.preview_text or "")
 end
 
 function Game:check_adjustment(node)
@@ -511,14 +538,16 @@ function Game:walk(node, enabled)
         local label=self:node_text(node)
         self.text[#self.text+1]=label
         self:add_action(label,"random",node)
-        self:pause_section(); return
+        self:preview_after(node); self:pause_section(); return
     elseif n=="success" or n=="failure" then
         local result=self.state.variables[a.var or "*difficulty*"] or 0
         if (n=="success")~=(result>0) then return end
         if a.section then
             local fallback=(n=="success" and "Successful roll" or "Failed roll")
-            self:add_action(plain(node)~="" and plain(node) or fallback,"goto",a)
-            self:pause_section()
+            local label=plain(node)~="" and plain(node) or fallback
+            self.text[#self.text+1]=label
+            self:add_action(label,"goto",a)
+            self.deferred_block=true
         else
             for _,child in ipairs(node.children or {}) do self:walk(child,true) end
         end
@@ -549,8 +578,10 @@ function Game:walk(node, enabled)
         return
     elseif n=="outcome" then
         if a.section and destination_matches_life_state(self.state,a) then
-            self:add_action(plain(node)~="" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)
-            self:pause_section()
+            local label=plain(node)~="" and plain(node) or ("Turn to "..tostring(a.section))
+            self.text[#self.text+1]=label
+            self:add_action(label,"goto",a)
+            self.deferred_block=true
         else
             for _,child in ipairs(node.children or {}) do self:walk(child,true) end
         end
@@ -560,17 +591,19 @@ function Game:walk(node, enabled)
         return
     elseif n=="fight" then
         self:add_action("Fight "..(a.name or "enemy"),"fight",node)
-        self:pause_section()
+        self:preview_after(node); self:pause_section()
         return
     elseif n=="return" then
-        if #self.state.history>0 then self:add_action(plain(node)~="" and plain(node) or "Return","return",a) end
-        if truth(a.force,true) then self:pause_section() end
+        local label=plain(node)~="" and plain(node) or "Return"
+        self.text[#self.text+1]=label
+        if #self.state.history>0 then self:add_action(label,"return",a) end
+        if truth(a.force,true) then self:preview_after(node); self:pause_section() end
         return
     elseif n=="training" then
         local label=self:node_text(node)
         self.text[#self.text+1]=label
         self:add_action(label,"training",node)
-        self:pause_section(); return
+        self:preview_after(node); self:pause_section(); return
     elseif n=="resurrection" then
         local label=self:node_text(node) or (a.section and "Arrange resurrection" or "Use resurrection")
         if plain(node)=="" and label then self.text[#self.text+1]=label end
@@ -604,7 +637,7 @@ function Game:walk(node, enabled)
         return
     elseif n=="market" or n=="trade" then
         self:add_action(plain(node)~="" and plain(node) or "Open market","market",node)
-        self:pause_section()
+        self:preview_after(node); self:pause_section()
         return
     elseif n=="buy" or n=="sell" then
         local cost=self:value(a.price or a.shards or a.amount or 0)
@@ -679,7 +712,7 @@ end
 function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
-    self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
+    self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.preview_text=nil; self.actions={}; self.steps=0; self.image=nil
     self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
@@ -687,11 +720,12 @@ function Game:load(book, section)
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
     self.state.pending={kind="section",book=self.state.book,section=self.state.section}
     return { title=(self.catalog.books[self.state.book].title or "").." — "..self.state.section,
-        text=table.concat(self.text):gsub("[ \t]+\n","\n"):match("^%s*(.-)%s*$"), actions=self.actions, image=self.image }
+        text=self:visible_text():gsub("[ \t]+\n","\n"):match("^%s*(.-)%s*$"), actions=self.actions, image=self.image }
 end
 
 function Game:choose(index)
     local action=self.actions[index]; if not action then return nil,"Invalid choice" end
+    self.preview_text=nil
     if action.kind=="startbook" then
         self.state.book=tostring(action.data.book); self.state.section="New"
         return self:load(self.state.book,self.state.section)

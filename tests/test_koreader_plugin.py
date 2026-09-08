@@ -148,7 +148,8 @@ class KOReaderPluginTests(unittest.TestCase):
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn('elseif n=="outcome" then', source)
         self.assertIn("if a.section and destination_matches_life_state(self.state,a) then", source)
-        self.assertIn('self:add_action(plain(node)~="" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)', source)
+        self.assertIn('local label=plain(node)~="" and plain(node) or ("Turn to "..tostring(a.section))', source)
+        self.assertIn('self:add_action(label,"goto",a)', source)
         section = (ROOT / "book2" / "101.xml").read_text()
         self.assertIn('<outcome range="10-12" section="499">A coven meeting</outcome>', section)
 
@@ -235,6 +236,20 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertNotIn("self:pause_section()", random)
         section = (ROOT / "book2" / "26.xml").read_text()
         self.assertIn('<random type="travel"/>:', section)
+
+    def test_all_resumable_tags_preview_their_trailing_text(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:preview_after(node)", source)
+        self.assertIn("function Game:visible_text()", source)
+        self.assertIn("node._parent,node._index=parent,index", source)
+        self.assertIn("self.preview_text=nil", source[source.index("function Game:choose(index)"):])
+        for marker in ('elseif n=="reroll"', 'elseif n=="fight"', 'elseif n=="return"',
+                       'elseif n=="training"', 'elseif n=="market" or n=="trade"'):
+            start = source.index(marker)
+            self.assertIn("self:preview_after(node)", source[start:start + 500], marker)
+        section = (ROOT / "book2" / "423.xml").read_text()
+        self.assertIn('<training ability="thievery" dice="1"/>,', section)
+        self.assertIn('Then <goto section="97"/>.', section)
 
     def test_text_parsing_audit_tracks_platform_only_differences(self) -> None:
         audit = (PLUGIN / "TEXT_PARSING_AUDIT.md").read_text()

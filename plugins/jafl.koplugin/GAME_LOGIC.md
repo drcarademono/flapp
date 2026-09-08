@@ -208,6 +208,15 @@ each button is an independent UI label; it does not alter the inline text. Thus
 book 2, section 75 reads “but roll two dice…” in the passage and shows
 “1. Roll two dice” in the action menu.
 
+Other resumable blockers (`training`, `fight`, `market`, forced `return`, and
+`reroll`) use a non-executing look-ahead renderer. The parser records each node's
+parent and mixed-content position, previews all following siblings through the
+section boundary, and keeps that preview separate from executed text. Choosing
+the action discards the preview and resumes the coroutine at the original XML
+position, so later mutations still execute exactly once. This prevents commas,
+periods, explanatory clauses, and later paragraphs after any blocking tag from
+being cut off without applying their game effects prematurely.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

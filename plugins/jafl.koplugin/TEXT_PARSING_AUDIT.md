@@ -24,6 +24,11 @@ and fields. Generated wording uses the current sentence position. Java's
 `hideChildContent()` rule is applied while generating defaults below groups,
 effects, and trade events.
 
+Resumable blocking nodes use a separate look-ahead buffer for the rest of the
+section. This mirrors Java's parse-before-execute visibility without advancing
+the Lua execution coroutine. The buffer is discarded before continuation, so
+the same nodes are subsequently executed—not duplicated—as authored.
+
 The remaining differences are primarily platform presentation differences:
 
 1. KOReader discards inline styling and Java's enabled/disabled visual state.
