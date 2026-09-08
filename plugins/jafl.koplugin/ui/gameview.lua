@@ -1,7 +1,8 @@
 local InputContainer=require("ui/widget/container/inputcontainer")
+local RenderImage=require("ui/renderimage")
 local UIManager=require("ui/uimanager")
 local TextViewer=require("ui/widget/textviewer")
-local ButtonDialog=require("ui/widget/buttondialog")
+local ImageViewer=require("ui/widget/imageviewer")
 local InfoMessage=require("ui/widget/infomessage")
 local _=require("gettext")
 
@@ -17,27 +18,34 @@ function GameView:render(result)
     if self.viewer then UIManager:close(self.viewer) end
     local footer=string.format("\n\n[%s: %d/%d  •  %s: %d  •  %s: %d]",_("Stamina"),self.game.state.stamina,
         self.game.state.max_stamina,_("Rank"),self.game.state.rank,_("Shards"),self.game.state.shards)
-    self.viewer=TextViewer:new{title=result.title,text=result.text..footer,fullscreen=true,
-        buttons_table={{ {text=_("Choices"),callback=function() self:showChoices() end},
-            {text=_("Sheet"),callback=function() self:showSheet() end},
-            {text=_("Close"),callback=function() self.save:write(self.game.state); UIManager:close(self.viewer); UIManager:close(self) end} }} }
-    UIManager:show(self.viewer)
-    self.save:write(self.game.state)
-end
-
-function GameView:showChoices()
-    if #self.game.actions==0 then UIManager:show(InfoMessage:new{text=_("There are no available choices.")}); return end
     local buttons={}
     for i,a in ipairs(self.game.actions) do
         local index=i
         buttons[#buttons+1]={{text=tostring(i)..". "..a.label,callback=function()
-            UIManager:close(self.choice_dialog)
-            local result,err=self.game:choose(index)
-            if result then self:render(result) else UIManager:show(InfoMessage:new{text=tostring(err)}) end
+            local next_result,err=self.game:choose(index)
+            if next_result then self:render(next_result) else UIManager:show(InfoMessage:new{text=tostring(err)}) end
         end}}
     end
-    buttons[#buttons+1]={{text=_("Cancel"),callback=function() UIManager:close(self.choice_dialog) end}}
-    self.choice_dialog=ButtonDialog:new{title=_("Choose your action"),buttons=buttons}; UIManager:show(self.choice_dialog)
+    buttons[#buttons+1]={
+        {text=_("Map"),callback=function() self:showMap() end},
+        {text=_("Sheet"),callback=function() self:showSheet() end},
+        {text=_("Close"),callback=function() self.save:write(self.game.state); UIManager:close(self.viewer); UIManager:close(self) end},
+    }
+    self.viewer=TextViewer:new{title=result.title,text=result.text..footer,fullscreen=true,
+        buttons_table=buttons}
+    UIManager:show(self.viewer)
+    self.save:write(self.game.state)
+end
+
+function GameView:showMap()
+    local book=self.game.catalog.books[self.game.state.book]
+    local map_name=book and book.properties.Map
+    local map_path=map_name and self.game.catalog:asset_path(self.game.state.book,map_name)
+    if not map_path then UIManager:show(InfoMessage:new{text=_("No map is available for this book.")}); return end
+    local image=RenderImage:renderImageFile(map_path,false)
+    if not image then UIManager:show(InfoMessage:new{text=_("Unable to open this book's map.")}); return end
+    UIManager:show(ImageViewer:new{image=image,image_disposable=true,fullscreen=true,with_title_bar=true,
+        title=book.properties["Map.Title"] or _("Map")})
 end
 
 function GameView:showSheet()
