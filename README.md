@@ -28,6 +28,19 @@ It requires the package `default-jdk-headless` installed to build the package.
 
 # Install
 
+## KOReader
+
+JaFL can also be installed as a native KOReader plugin. Build the complete,
+side-loadable package with:
+
+    make koreader-plugin
+
+Extract `dist/jafl.koplugin.zip` into KOReader's `plugins` directory and restart
+KOReader. Open **Tools → Fabled Lands → New adventure**. The package contains
+the six books and illustration sets available in this repository; saves are
+kept in KOReader's settings directory. Plugin controls and development details
+are documented in [`plugins/jafl.koplugin/README.md`](plugins/jafl.koplugin/README.md).
+
 You can install the package running this command:
 
     # dpkg -i flands_1.0.6~ado1_all.deb
