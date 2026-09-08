@@ -91,7 +91,7 @@ missing words, but the visual result is not an exact Java reproduction.
 | --- | --- | --- |
 | `GotoNode` | Keeps authored text or generates sentence-aware `Turn to`/`turn to`, or a cross-book title, with underlined/bold spans. | Generated wording now matches; text is plain and duplicated as a separate button. Disabled-link appearance differs. |
 | `ChoiceNode` | Builds a description paragraph and separately wired goto, supports `[box]`, and highlights the description. | `plain()` flattens descendants into one button label; layout, styles, and description/destination separation are lost. |
-| `RandomNode` | Keeps authored text or generates sentence-aware `Roll/roll one die`, `two dice`, or *n* dice. | Wording/capitalization now matches; action is a separate button without inline styling. |
+| `RandomNode` | Keeps authored text or generates sentence-aware `Roll/roll one die`, `two dice`, or *n* dice, while later SAX text remains in the document. | Wording/capitalization and trailing mixed content now match; action is a separate button without inline styling. |
 | `DifficultyNode` | Keeps text or generates sentence-aware `Make/make a ABILITY roll at Difficulty N`; only initial leaves are highlighted. | Generated wording/case matches; multiple abilities become separate accessible buttons and partial-span styling differs. |
 | `RankCheckNode` | Keeps text or generates sentence-aware rank/dice instructions with clickable leaves. | Generated dice/add/subtract wording matches; presentation uses a button. |
 | `RerollNode` | Keeps text or generates sentence-aware `Roll again`/`roll again`. | Generated text now matches and reuses the random-roll path; inline styling differs. |

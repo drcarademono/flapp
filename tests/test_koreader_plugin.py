@@ -225,6 +225,15 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('self:add_action(label,"random",node)', source)
         self.assertIn('description=ea.ability:upper().." "', source)
 
+    def test_random_roll_renders_trailing_text_before_pausing(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        random = source[source.index('elseif n=="random" then'):source.index('elseif n=="difficulty"')]
+        self.assertIn("self.pause_after_paragraph=true", random)
+        self.assertIn("self.pause_before_outcomes=true", random)
+        self.assertNotIn("self:pause_section()", random)
+        section = (ROOT / "book2" / "26.xml").read_text()
+        self.assertIn('<random type="travel"/>:', section)
+
     def test_text_parsing_audit_tracks_platform_only_differences(self) -> None:
         audit = (PLUGIN / "TEXT_PARSING_AUDIT.md").read_text()
         self.assertIn("Java-compatible plain-text semantics now implemented", audit)

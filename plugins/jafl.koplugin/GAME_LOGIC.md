@@ -195,6 +195,12 @@ text is suppressed beneath `group`, `effect`, and `tradeevent`, matching those
 Java parents' `hideChildContent()` behavior. Authored element content always
 takes precedence over a generated label.
 
+Forced random rolls use the same display-before-block boundary as checks. Text
+following the `<random>` element remains visible through the end of its paragraph
+or up to its `<outcomes>` container. Thus book 2, section 26 initially displays
+“Roll two dice:” rather than losing the authored colon; after the roll, execution
+continues into the matching outcome.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

@@ -485,7 +485,10 @@ function Game:walk(node, enabled)
             local label=self:node_text(node)
             self.text[#self.text+1]=label
             self:add_action(label,"random",node)
-            if truth(a.force,true) then self:pause_section() end
+            if truth(a.force,true) then
+                if (self.paragraph_depth or 0)>0 then self.pause_after_paragraph=true
+                else self.pause_before_outcomes=true end
+            end
         end
         return
     elseif n=="difficulty" or n=="rankcheck" then
