@@ -89,6 +89,8 @@ class KOReaderPluginTests(unittest.TestCase):
                      'action.kind=="resurrect"', 'action.kind=="cache"'):
             self.assertIn(kind, game)
         self.assertIn("function Game:open_market", game)
+        self.assertIn('self:add_action("Leave market","leave_market"', game)
+        self.assertIn('action.kind=="leave_market"', game)
         self.assertIn("function Game:apply_affliction", game)
         self.assertIn("local function range_matches", game)
         self.assertIn("local function pair_fight_nodes", game)

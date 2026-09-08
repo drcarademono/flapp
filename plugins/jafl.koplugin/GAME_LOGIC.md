@@ -95,7 +95,10 @@ The same ordered interpreter handles the rest of the playable XML vocabulary:
   section history, and return actions.
 - **Economy:** item/weapon/armour/tool buy and sell entries, affordability and
   ownership checks, repeated market transactions, and persistent item/money
-  caches and transfers.
+  caches and transfers. Java's `MarketNode.execute()` enables the table and
+  immediately continues section execution; it never requires a purchase or
+  sale. KOReader's separate market screen therefore puts **Leave market** first,
+  which resumes at the node after `<market>` without changing inventory or money.
 - **Advancement and death:** training rolls, capped ability increases,
   resurrection arrangements and consumption, and authored post-death recovery.
 - **Fight extensions:** pre-damage, alternate Defence, alternate damaged ability,

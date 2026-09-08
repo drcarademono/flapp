@@ -249,6 +249,10 @@ end
 
 function Game:open_market(node, message)
     self.actions={}; self.text={message or "Choose a transaction."}
+    -- MarketNode.execute() is non-blocking in Java.  KOReader presents the
+    -- market as its own screen, so this explicit first action is the equivalent
+    -- of continuing to the next executable without making a transaction.
+    self:add_action("Leave market","leave_market",{market=node})
     local function visit(parent)
         for _,child in ipairs(parent.children or {}) do
             if type(child)=="table" then
@@ -627,6 +631,12 @@ function Game:choose(index)
     elseif action.kind=="market" then
         self:open_market(action.data)
         return {title="Market",text=table.concat(self.text),actions=self.actions}
+    elseif action.kind=="leave_market" then
+        self.actions={}
+        self:resume_section()
+        local book=self.catalog.books[self.state.book]
+        return {title=(book and book.title or "").." — "..self.state.section,
+            text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="buy" or action.kind=="sell" then
         local a,cost=action.data.attr,action.data.cost
         local name=a.name or a.item or "item"
