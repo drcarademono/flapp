@@ -63,7 +63,7 @@ function Game:condition(a)
     if ok and a.emptyvar then ok = s.variables[a.emptyvar] == nil end
     if ok and a.flag then ok = s.flags[a.flag] == true end
     if ok and a.dead then ok = (s.stamina <= 0) == truth(a.dead, false) end
-    return truth(a.not, false) and not ok or ok
+    return truth(a["not"], false) and not ok or ok
 end
 
 function Game:mutate(name, a, direction)
