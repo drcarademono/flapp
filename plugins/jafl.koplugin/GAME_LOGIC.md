@@ -161,6 +161,13 @@ Action attributes are cumulative rather than mutually exclusive: for example,
 `<lose item="*" shards="*">` removes both all possessions and all carried money
 before rendering the remainder of the paragraph.
 
+The same display-before-block rule applies to forced gotos inside `if`/`elseif`/
+`else` branches even when there is no paragraph wrapper. Generated goto text and
+the rest of the selected branch are rendered before execution pauses. Whitespace-
+only XML text between conditional tags does not terminate an if/elseif/else chain.
+Thus book 2, section 409 displays the complete “If not, Turn to 353.” branch and
+uses the same text for its action.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

@@ -354,10 +354,11 @@ function Game:walk(node, enabled)
         -- unavailable while dead, while dead="t" destinations are death-only.
         if self:condition(a) and destination_matches_life_state(self.state,a) then
             local label=plain(node)
-            if label~="" then self.text[#self.text+1]=label end
-            self:add_action(label ~= "" and label or ("Turn to "..tostring(a.section)),"goto",a)
+            local display_label=label ~= "" and label or ("Turn to "..tostring(a.section))
+            self.text[#self.text+1]=display_label
+            self:add_action(display_label,"goto",a)
             if truth(a.force,true) then
-                if (self.paragraph_depth or 0)>0 then self.deferred_block=true
+                if (self.paragraph_depth or 0)>0 or (self.conditional_depth or 0)>0 then self.deferred_block=true
                 else self:pause_section() end
             end
         end
@@ -493,7 +494,9 @@ function Game:walk(node, enabled)
     elseif n=="image" then self.image=self.catalog:asset_path(a.book or self.state.book,a.file or a.name); return
     end
     local is_paragraph=n=="p"
+    local is_conditional=n=="if" or n=="elseif" or n=="else"
     if is_paragraph then self.paragraph_depth=(self.paragraph_depth or 0)+1 end
+    if is_conditional then self.conditional_depth=(self.conditional_depth or 0)+1 end
     local branch_taken=false
     local in_chain=false
     for _,child in ipairs(node.children or {}) do
@@ -508,6 +511,8 @@ function Game:walk(node, enabled)
         elseif type(child)=="table" and child.name=="else" and in_chain then
             if not branch_taken then self:walk(child,true) end
             in_chain=false; branch_taken=false
+        elseif type(child)=="string" and not child:match("%S") then
+            self:walk(child,enabled)
         else
             in_chain=false; branch_taken=false; self:walk(child,enabled)
         end
@@ -525,6 +530,13 @@ function Game:walk(node, enabled)
             self:resume_pending_check_children()
         end
     end
+    if is_conditional then
+        self.conditional_depth=self.conditional_depth-1
+        if self.conditional_depth==0 and self.deferred_block and self.paragraph_depth==0 then
+            self.deferred_block=false
+            self:pause_section()
+        end
+    end
     if n=="section" and self.pause_before_outcomes then
         self.pause_before_outcomes=false
         self:pause_section()
@@ -536,7 +548,7 @@ function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
-    self.paragraph_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
+    self.paragraph_depth=0; self.conditional_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)

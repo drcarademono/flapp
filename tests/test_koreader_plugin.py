@@ -167,7 +167,7 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("if (self.paragraph_depth or 0)>0 then", source)
         self.assertIn("self.pause_after_paragraph=true", source)
         self.assertIn("if self.paragraph_depth==0 and self.pause_after_paragraph then", source)
-        self.assertIn("self.paragraph_depth=0; self.deferred_block=false; self.pause_after_paragraph=false", source)
+        self.assertIn("self.paragraph_depth=0; self.conditional_depth=0; self.deferred_block=false; self.pause_after_paragraph=false", source)
         self.assertIn("self.pause_before_outcomes=true", source)
         self.assertIn('elseif n=="outcomes" then\n        if self.pause_before_outcomes then', source)
         self.assertIn("function Game:resume_pending_check_children()", source)
@@ -175,15 +175,24 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_inline_goto_renders_full_paragraph_without_executing_its_tail(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("function Game:render_node(node)", source)
-        self.assertIn("if (self.paragraph_depth or 0)>0 then self.deferred_block=true", source)
+        self.assertIn("if (self.paragraph_depth or 0)>0 or (self.conditional_depth or 0)>0 then self.deferred_block=true", source)
         self.assertIn("if self.deferred_block then\n            self:render_node(child)", source)
-        self.assertIn('if label~="" then self.text[#self.text+1]=label end', source)
+        self.assertIn('self.text[#self.text+1]=display_label', source)
         self.assertIn("if a.cache then available=(s.caches[a.cache] and s.caches[a.cache].shards) or 0 end", source)
         section = (ROOT / "book2" / "289.xml").read_text()
         self.assertNotIn('s.shards=0\n        return', source)
         self.assertNotIn('State.remove_matching_items(s,a)\n        return', source)
         self.assertIn('<lose item="*" shards="*">cross them off</lose>', section)
         self.assertIn('If not, the brigands <goto section="560">kill you</goto>.', section)
+
+    def test_conditional_goto_renders_complete_branch_text(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('local is_conditional=n=="if" or n=="elseif" or n=="else"', source)
+        self.assertIn('(self.conditional_depth or 0)>0 then self.deferred_block=true', source)
+        self.assertIn('elseif type(child)=="string" and not child:match("%S") then', source)
+        self.assertIn('self.text[#self.text+1]=display_label', source)
+        section = (ROOT / "book2" / "409.xml").read_text()
+        self.assertIn('If not, <goto section="353"/>.', section)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
