@@ -381,7 +381,12 @@ function Game:walk(node, enabled)
         end
         return
     elseif n=="outcome" then
-        for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+        if a.section and destination_matches_life_state(self.state,a) then
+            self:add_action(plain(node)~="" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)
+            self:pause_section()
+        else
+            for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+        end
         return
     elseif n=="fightdamage" or n=="fightround" or n=="flee" then
         -- Parsed up front and owned by the corresponding fight, as in FightNode.hookupNodes().

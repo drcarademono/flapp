@@ -142,6 +142,14 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('<success section="630"/>', section)
         self.assertIn('<failure section="36"/>', section)
 
+    def test_ranged_outcome_creates_its_authored_destination(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('elseif n=="outcome" then', source)
+        self.assertIn("if a.section and destination_matches_life_state(self.state,a) then", source)
+        self.assertIn('self:add_action(plain(node)~="" and plain(node) or ("Turn to "..tostring(a.section)),"goto",a)', source)
+        section = (ROOT / "book2" / "101.xml").read_text()
+        self.assertIn('<outcome range="10-12" section="499">A coven meeting</outcome>', section)
+
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
 

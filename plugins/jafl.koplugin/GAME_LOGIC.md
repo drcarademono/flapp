@@ -109,6 +109,9 @@ The same ordered interpreter handles the rest of the playable XML vocabulary:
   either numeric `<outcome>` entries or direct `<success>`/`<failure>` entries;
   the latter resume the matching destination after a check, as used by book 1,
   section 257.
+  A matching numeric `<outcome section="…">` creates and blocks on its authored
+  destination just like Java's `OutcomeNode`-owned `GotoNode`; its description is
+  used as the action label. This covers travel tables such as book 2, section 101.
 - **Navigation:** forced and optional gotos, cross-book travel, alive/dead routes,
   section history, and return actions.
 - **Economy:** item/weapon/armour/tool buy and sell entries, affordability and
