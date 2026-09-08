@@ -168,6 +168,9 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("self.pause_after_paragraph=true", source)
         self.assertIn("if self.paragraph_depth==0 and self.pause_after_paragraph then", source)
         self.assertIn("self.paragraph_depth=0; self.pause_after_paragraph=false", source)
+        self.assertIn("self.pause_before_outcomes=true", source)
+        self.assertIn('elseif n=="outcomes" then\n        if self.pause_before_outcomes then', source)
+        self.assertIn("function Game:resume_pending_check_children()", source)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)

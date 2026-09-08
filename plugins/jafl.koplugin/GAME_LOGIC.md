@@ -139,6 +139,10 @@ the element is empty, the same kind of default instruction as Java is generated.
 When a forced check occurs inside a paragraph, execution defers its pause until
 the paragraph has finished rendering. The whole containing sentence is therefore
 visible before the roll, while nodes after the paragraph remain unexecuted.
+Some older sections, including book 2 section 499, put an inline check directly
+under `<section>` with no paragraph wrapper. In that form, the interpreter renders
+the following text and pauses immediately before `<outcomes>`, so the complete
+sentence is visible but result-dependent branches cannot execute early.
 After the roll, the coroutine first finishes the containing sentence and reaches
 the matching outcome destination, then appends the roll summary. This prevents a
 result from splitting a sentence, as previously happened in book 2, section 499.

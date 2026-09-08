@@ -311,6 +311,14 @@ function Game:apply_affliction(kind, node)
     end
 end
 
+function Game:resume_pending_check_children()
+    local pending=self.pending_check_children or {}
+    self.pending_check_children=nil
+    for _,child in ipairs(pending) do
+        if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
+    end
+end
+
 function Game:walk(node, enabled)
     self.steps=self.steps+1; if self.steps > 10000 then error("section execution limit exceeded") end
     if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=normalize_text(node) end return end
@@ -359,10 +367,11 @@ function Game:walk(node, enabled)
                 self.pause_after_paragraph=true
                 self.pending_check_children=node.children
             else
-                self:pause_section()
-                for _,child in ipairs(node.children or {}) do
-                    if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
-                end
+                -- A check may be inline in a section without a <p> wrapper (for
+                -- example 2.499). Render its following text, then stop immediately
+                -- before the outcomes that depend on the unresolved roll.
+                self.pause_before_outcomes=true
+                self.pending_check_children=node.children
             end
         end
         return
@@ -378,6 +387,11 @@ function Game:walk(node, enabled)
         end
         return
     elseif n=="outcomes" then
+        if self.pause_before_outcomes then
+            self.pause_before_outcomes=false
+            self:pause_section()
+            self:resume_pending_check_children()
+        end
         local has_check_branch=false
         for _,child in ipairs(node.children or {}) do
             if type(child)=="table" and (child.name=="success" or child.name=="failure") then
@@ -481,12 +495,13 @@ function Game:walk(node, enabled)
         if self.paragraph_depth==0 and self.pause_after_paragraph then
             self.pause_after_paragraph=false
             self:pause_section()
-            local pending=self.pending_check_children or {}
-            self.pending_check_children=nil
-            for _,child in ipairs(pending) do
-                if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
-            end
+            self:resume_pending_check_children()
         end
+    end
+    if n=="section" and self.pause_before_outcomes then
+        self.pause_before_outcomes=false
+        self:pause_section()
+        self:resume_pending_check_children()
     end
 end
 
@@ -494,7 +509,7 @@ function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
-    self.paragraph_depth=0; self.pause_after_paragraph=false; self.pending_check_children=nil
+    self.paragraph_depth=0; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)
