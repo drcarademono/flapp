@@ -372,8 +372,10 @@ function Game:walk(node, enabled)
             self.text[#self.text+1]=display_label
             self:add_action(display_label,"goto",a)
             if truth(a.force,true) then
-                if (self.paragraph_depth or 0)>0 or (self.conditional_depth or 0)>0 then self.deferred_block=true
-                else self:pause_section() end
+                -- Parsing and execution are separate in Java: finish presenting
+                -- the containing block (or the section itself) before the forced
+                -- destination suspends executable processing.
+                self.deferred_block=true
             end
         end
         return
@@ -555,6 +557,10 @@ function Game:walk(node, enabled)
         self.pause_before_outcomes=false
         self:pause_section()
         self:resume_pending_check_children()
+    end
+    if n=="section" and self.deferred_block then
+        self.deferred_block=false
+        self:pause_section()
     end
 end
 

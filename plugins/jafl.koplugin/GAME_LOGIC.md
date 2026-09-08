@@ -176,6 +176,12 @@ destination text while a disabled branch is being presented. Consequently book
 5, section 150 shows all of its “If you have…” instructions, but exposes only
 the destination appropriate to the adventurer's current codewords.
 
+A forced goto directly under a section follows the same rule. It marks execution
+as blocked, but the display-only pass consumes the remaining sibling text before
+the coroutine yields at the section boundary. This is important for XML that
+does not use a `<p>` wrapper: book 2, section 20 therefore ends its sentence with
+the authored period after the generated “Turn to 118”.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

@@ -175,7 +175,7 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_inline_goto_renders_full_paragraph_without_executing_its_tail(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("function Game:render_node(node)", source)
-        self.assertIn("if (self.paragraph_depth or 0)>0 or (self.conditional_depth or 0)>0 then self.deferred_block=true", source)
+        self.assertIn("self.deferred_block=true", source)
         self.assertIn("if self.deferred_block then\n            self:render_node(child)", source)
         self.assertIn('self.text[#self.text+1]=display_label', source)
         self.assertIn("if a.cache then available=(s.caches[a.cache] and s.caches[a.cache].shards) or 0 end", source)
@@ -188,7 +188,7 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_conditional_goto_renders_complete_branch_text(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn('local is_conditional=n=="if" or n=="elseif" or n=="else"', source)
-        self.assertIn('(self.conditional_depth or 0)>0 then self.deferred_block=true', source)
+        self.assertIn('self.deferred_block=true', source)
         self.assertIn('elseif type(child)=="string" and not child:match("%S") then', source)
         self.assertIn('self.text[#self.text+1]=display_label', source)
         section = (ROOT / "book2" / "409.xml").read_text()
@@ -204,6 +204,13 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('codeword="Diamond"', section)
         self.assertIn('codeword="Erebus"', section)
         self.assertIn('codeword="Evade"', section)
+
+    def test_top_level_forced_goto_renders_trailing_text(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('if n=="section" and self.deferred_block then', source)
+        self.assertNotIn('else self:pause_section() end', source[source.index('elseif n=="goto" then'):source.index('elseif n=="set" then')])
+        section = (ROOT / "book2" / "20.xml").read_text()
+        self.assertIn('and <goto section="118"/>.', section)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
