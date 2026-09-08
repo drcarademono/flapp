@@ -207,6 +207,8 @@ class KOReaderPluginTests(unittest.TestCase):
 
     def test_top_level_forced_goto_renders_trailing_text(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:is_new_sentence()", source)
+        self.assertIn('(self:is_new_sentence() and "Turn to " or "turn to ")', source)
         self.assertIn('if n=="section" and self.deferred_block then', source)
         self.assertNotIn('else self:pause_section() end', source[source.index('elseif n=="goto" then'):source.index('elseif n=="set" then')])
         section = (ROOT / "book2" / "20.xml").read_text()

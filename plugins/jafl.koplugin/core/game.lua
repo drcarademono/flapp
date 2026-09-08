@@ -320,6 +320,17 @@ function Game:resume_pending_check_children()
     end
 end
 
+function Game:is_new_sentence()
+    local text=table.concat(self.text):gsub("%s+$","")
+    while text~="" do
+        if text:sub(-1)=="'" or text:sub(-1)==")" then text=text:sub(1,-2):gsub("%s+$","")
+        elseif text:sub(-3)=="’" then text=text:sub(1,-4):gsub("%s+$","")
+        else break end
+    end
+    if text=="" then return true end
+    return text:sub(-1):match("[%.%!%?%d]")~=nil
+end
+
 function Game:goto_label(node)
     local label=plain(node)
     if label~="" then return label end
@@ -328,7 +339,7 @@ function Game:goto_label(node)
         local book=self.catalog.books[tostring(a.book)]
         return ((book and book.title) or ("Book "..tostring(a.book))).." "..tostring(a.section)
     end
-    return "Turn to "..tostring(a.section)
+    return (self:is_new_sentence() and "Turn to " or "turn to ")..tostring(a.section)
 end
 
 -- Render already-authored content after a blocking inline action without

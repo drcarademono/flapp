@@ -179,8 +179,13 @@ the destination appropriate to the adventurer's current codewords.
 A forced goto directly under a section follows the same rule. It marks execution
 as blocked, but the display-only pass consumes the remaining sibling text before
 the coroutine yields at the section boundary. This is important for XML that
-does not use a `<p>` wrapper: book 2, section 20 therefore ends its sentence with
-the authored period after the generated “Turn to 118”.
+does not use a `<p>` wrapper: book 2, section 20 therefore retains the authored
+period after its generated destination text.
+
+Generated local goto text also follows Java's sentence-aware capitalization.
+It uses “Turn to” at the start of a sentence and “turn to” when embedded after
+ordinary prose. For example, the source phrase `and <goto section="118"/>` in
+book 2, section 20 is displayed as “and turn to 118.”
 
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
