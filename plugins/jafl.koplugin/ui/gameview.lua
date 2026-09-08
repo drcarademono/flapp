@@ -1,4 +1,5 @@
 local InputContainer=require("ui/widget/container/inputcontainer")
+local RenderImage=require("document/renderimage")
 local UIManager=require("ui/uimanager")
 local TextViewer=require("ui/widget/textviewer")
 local ImageViewer=require("ui/widget/imageviewer")
@@ -41,7 +42,9 @@ function GameView:showMap()
     local map_name=book and book.properties.Map
     local map_path=map_name and self.game.catalog:asset_path(self.game.state.book,map_name)
     if not map_path then UIManager:show(InfoMessage:new{text=_("No map is available for this book.")}); return end
-    UIManager:show(ImageViewer:new{image=map_path,fullscreen=true,with_title_bar=true,
+    local image=RenderImage:renderImageFile(map_path,false)
+    if not image then UIManager:show(InfoMessage:new{text=_("Unable to open this book's map.")}); return end
+    UIManager:show(ImageViewer:new{image=image,image_disposable=true,fullscreen=true,with_title_bar=true,
         title=book.properties["Map.Title"] or _("Map")})
 end
 

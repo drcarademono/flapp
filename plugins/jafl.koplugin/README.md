@@ -26,7 +26,9 @@ settings to use a different content-pack directory containing `books.ini`.
 - Read the current section in KOReader's native text viewer.
 - Currently available choices are displayed as selectable buttons beneath the
   section text.
-- Select **Map** to open the current book's map with KOReader's image viewer.
+- Select **Map** to open the map for the book containing the current section
+  with KOReader's image viewer. The map follows you when an action takes you to
+  another book.
 - Select **Sheet** for abilities and possessions.
 - **Close** saves before returning to KOReader. The game also saves after every
   section transition, so suspend or process termination cannot lose more than
