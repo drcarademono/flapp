@@ -6,6 +6,8 @@ flands.jar
 all.zip
 *.zip
 **/*.class
+__pycache__/
+*.pyc
 
 debian/files
 debian/flands.debhelper.log
