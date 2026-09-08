@@ -100,6 +100,13 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('installed = exists(join(path, "New.xml"))', catalog)
         self.assertIn("new_game and game:choose_starting_book() or nil", main)
 
+    def test_bundled_books_override_stale_external_content_setting(self) -> None:
+        main = (PLUGIN / "main.lua").read_text()
+        bundled = main.index('local bundled = plugin_dir .. "contentpack"')
+        configured = main.index('local configured = G_reader_settings:readSetting("jafl_content_root")')
+        self.assertLess(bundled, configured)
+        self.assertIn('io.open(bundled .. "/books.ini", "rb")', main)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

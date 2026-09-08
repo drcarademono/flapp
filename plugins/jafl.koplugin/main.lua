@@ -34,17 +34,19 @@ function JaFL:init()
 end
 
 function JaFL:contentRoot()
-    local configured = G_reader_settings:readSetting("jafl_content_root")
-    if configured then
-        return configured
-    end
-
+    -- An installed plugin ships a complete, mutually consistent six-book pack.
+    -- Prefer it over a stale jafl_content_root left by an older/source install.
     local bundled = plugin_dir .. "contentpack"
     local f = io.open(bundled .. "/books.ini", "rb")
 
     if f then
         f:close()
         return bundled
+    end
+
+    local configured = G_reader_settings:readSetting("jafl_content_root")
+    if configured then
+        return configured
     end
 
     return plugin_dir .. "../.."

@@ -36,6 +36,10 @@ suspends section execution on supported KOReader builds.
   is considered installed when its `New.xml` entry section exists, so all six
   bundled books remain available even when upgrading from a package layout that
   omitted optional metadata files.
+- Installed releases prefer their bundled content pack over `jafl_content_root`.
+  This prevents an old external-content setting containing only book 1 from
+  masking bundled books 2–6 and incorrectly enabling missing-book boundaries
+  such as book 1, section 330.
 - A usable forced destination pauses execution. Therefore, in section 570, an
   adventurer who wins stops at section 148. An adventurer who dies cannot use
   section 148, continues through the authored recovery effects, and then stops
