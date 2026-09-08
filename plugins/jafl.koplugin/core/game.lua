@@ -82,7 +82,60 @@ function Game:mutate(name, a, direction)
 end
 
 function Game:add_action(label, kind, data)
-    self.actions[#self.actions+1] = { label=label, kind=kind, data=data }
+    local action = { label=label, kind=kind, data=data }
+    self.actions[#self.actions+1] = action
+    return action
+end
+
+local function ability_key(name)
+    return name and name:gsub("^%l", string.upper)
+end
+
+function Game:check_adjustment(node)
+    local adjustment = 0
+    for _, child in ipairs(node.children or {}) do
+        if type(child) == "table" and child.name == "adjust" and self:condition(child.attr) then
+            adjustment = adjustment + self:value(child.attr.amount or child.attr.value)
+        end
+    end
+    return adjustment
+end
+
+function Game:add_check(node)
+    local a = node.attr
+    if a.flag and not self.state.flags[a.flag] then return end
+
+    local label = plain(node)
+    if label == "" then
+        if node.name == "rankcheck" then
+            local dice = tonumber(a.dice) or 1
+            label = "Roll "..dice..(dice == 1 and " die" or " dice")
+        else
+            local names = {}
+            for _, name in ipairs(words(a.ability)) do names[#names+1] = name:upper() end
+            label = "Make a "..table.concat(names, " or ").." roll at Difficulty "..tostring(a.level)
+        end
+    end
+
+    local check = { node=node, branches={} }
+    local abilities = node.name == "difficulty" and words(a.ability) or {}
+    if #abilities > 1 then
+        for _, ability in ipairs(abilities) do
+            local data = check
+            data = { node=node, branches=check.branches, ability=ability, group=check }
+            self:add_action(label.." ("..ability:upper()..")", "skillcheck", data)
+        end
+    else
+        self:add_action(label, "skillcheck", check)
+    end
+    self.pending_checks[#self.pending_checks+1] = check
+    if a.var then self.checks_by_var[a.var] = check end
+end
+
+function Game:attach_check_branch(node)
+    local check = node.attr.var and self.checks_by_var[node.attr.var]
+        or self.pending_checks[#self.pending_checks]
+    if check then check.branches[#check.branches+1] = node end
 end
 
 function Game:walk(node, enabled)
@@ -111,9 +164,19 @@ function Game:walk(node, enabled)
         local candidates={}; for _,c in ipairs(node.children) do if type(c)=="table" and c.name=="outcome" then candidates[#candidates+1]=c end end
         if #candidates>0 then self:walk(candidates[self.random(#candidates)],true) end; return
     elseif n=="difficulty" or n=="rankcheck" then
-        local ability=a.ability and self.state.abilities[a.ability:gsub("^%l",string.upper)] or self.state.rank
-        local roll=self.random(6)+self.random(6); local success=roll <= (ability or 0)+self:value(a.bonus or 0)-self:value(a.difficulty or 0)
-        for _,c in ipairs(node.children) do if type(c)=="table" and ((c.name=="success" and success) or (c.name=="failure" and not success)) then self:walk(c,true) end end
+        self:add_check(node)
+        return
+    elseif (n=="success" or n=="failure") and not self.resolving_check then
+        self:attach_check_branch(node)
+        return
+    elseif (n=="success" or n=="failure") and a.section then
+        local fallback=(n=="success" and "Successful roll" or "Failed roll")
+        self:add_action(plain(node)~="" and plain(node) or fallback,"goto",a)
+        return
+    elseif n=="outcomes" then
+        for _,c in ipairs(node.children or {}) do
+            if type(c)=="table" and (c.name=="success" or c.name=="failure") then self:attach_check_branch(c) end
+        end
         return
     elseif n=="fight" then self:add_action("Fight "..(a.name or "enemy"),"fight",node); return
     elseif n=="market" or n=="trade" then self:add_action(plain(node)~="" and plain(node) or "Open market","market",node); return
@@ -146,6 +209,7 @@ function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
+    self.pending_checks={}; self.checks_by_var={}
     local ok,msg=pcall(function() self:walk(root,true) end); if not ok then return nil,msg end
     self.state.pending={kind="section",book=self.state.book,section=self.state.section}
     return { title=(self.catalog.books[self.state.book].title or "").." — "..self.state.section,
@@ -154,7 +218,46 @@ end
 
 function Game:choose(index)
     local action=self.actions[index]; if not action then return nil,"Invalid choice" end
-    if action.kind=="goto" then
+    if action.kind=="skillcheck" then
+        local node,a=action.data.node,action.data.node.attr
+        local adjustment=self:check_adjustment(node)
+        local roll,score,success,description
+        if node.name=="rankcheck" then
+            local dice=tonumber(a.dice) or 1
+            roll=self:value(a.add or 0)+adjustment
+            for _=1,dice do roll=roll+self.random(6) end
+            score=self.state.rank
+            success=roll<=score
+            description=string.format("Rank check: rolled %d against Rank %d — %s.",roll,score,success and "success" or "failure")
+            self.state.variables["*ability*"]="Rank"
+        else
+            local chosen=action.data.ability or words(a.ability)[1]
+            score=(self.state.abilities[ability_key(chosen)] or 0)+adjustment
+            roll=self.random(6)+self.random(6)+score
+            success=roll>self:value(a.level)
+            description=string.format("%s check: rolled %d against Difficulty %d — %s.",
+                ability_key(chosen),roll,self:value(a.level),success and "success" or "failure")
+            self.state.variables["*ability*"]=ability_key(chosen)
+        end
+        local result = node.name=="rankcheck" and (score-roll+1) or (roll-self:value(a.level))
+        self.state.variables[a.var or "*difficulty*"]=result
+        if a.flag then self.state.flags[a.flag]=nil end
+        self.text[#self.text+1]="\n\n"..description
+        local remaining={}
+        if not truth(a.force,true) then
+            local group=action.data.group or action.data
+            for _,candidate in ipairs(self.actions) do
+                if (candidate.data.group or candidate.data)~=group then remaining[#remaining+1]=candidate end
+            end
+        end
+        self.actions=remaining
+        self.resolving_check=true
+        for _,branch in ipairs(action.data.branches) do
+            if (branch.name=="success") == success then self:walk(branch,true) end
+        end
+        self.resolving_check=false
+        return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="goto" then
         local a=action.data
         if truth(a.pay,a.shards~=nil) then self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0)); if a.item then State.remove_item(self.state,a.item,1) end end
         if a.sail then self.state.at_sea=true end
