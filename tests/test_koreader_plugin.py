@@ -39,7 +39,7 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertNotIn('ImageViewer:new{image=map_path', source)
         self.assertNotIn('text=_("Choices")', source)
         self.assertNotIn('require("ui/widget/buttondialog")', source)
-        self.assertIn("local BOOK_TEXT_SIZE=20", source)
+        self.assertIn("local BOOK_TEXT_SIZE=12", source)
         self.assertIn("text_font_size=BOOK_TEXT_SIZE", source)
         self.assertIn("font_bold=false", source)
         self.assertIn("text_size=BOOK_TEXT_SIZE", source)
@@ -93,6 +93,8 @@ class KOReaderPluginTests(unittest.TestCase):
 
     def test_outcomes_dispatch_success_and_failure_transitions(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('local default_var=has_check_branch and "*difficulty*" or "*random*"', source)
+        self.assertIn("local value=self.state.variables[a.var or default_var]", source)
         self.assertIn('c.name=="success" and value~=nil and value>0', source)
         self.assertIn('c.name=="failure" and value~=nil and value<=0', source)
         section = (ROOT / "book1" / "257.xml").read_text()

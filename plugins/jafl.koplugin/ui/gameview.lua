@@ -7,7 +7,7 @@ local InfoMessage=require("ui/widget/infomessage")
 local _=require("gettext")
 
 local GameView=InputContainer:extend{}
-local BOOK_TEXT_SIZE=20
+local BOOK_TEXT_SIZE=12
 
 function GameView:start()
     local result,err=self.game:load(self.game.state.book,self.game.state.section)

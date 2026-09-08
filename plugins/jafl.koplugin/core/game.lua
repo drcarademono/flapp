@@ -344,7 +344,15 @@ function Game:walk(node, enabled)
         end
         return
     elseif n=="outcomes" then
-        local value=self.state.variables[a.var or "*random*"] or self.last_roll
+        local has_check_branch=false
+        for _,child in ipairs(node.children or {}) do
+            if type(child)=="table" and (child.name=="success" or child.name=="failure") then
+                has_check_branch=true; break
+            end
+        end
+        local default_var=has_check_branch and "*difficulty*" or "*random*"
+        local value=self.state.variables[a.var or default_var]
+        if value==nil and not has_check_branch then value=self.last_roll end
         for _,c in ipairs(node.children or {}) do
             if type(c)=="table" then
                 local matched=c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr)

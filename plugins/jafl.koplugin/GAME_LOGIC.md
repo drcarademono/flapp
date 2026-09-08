@@ -110,5 +110,5 @@ mixed-content order. Images are resolved by the content catalog and shown by the
 KOReader view.
 
 Main adventure prose and generated choice buttons use the same ordinary
-20-point book-reading size. Choice labels are not bold, leaving the title and
+12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.
