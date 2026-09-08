@@ -27,6 +27,9 @@ suspends section execution on supported KOReader builds.
   particular, an omitted `dead` flag is false and therefore matches a living
   character. This rule applies equally to `choice` and `goto`, including the
   character-selection and begin-adventure screens.
+- Before a profession has been selected there is no active adventurer, matching
+  the Java application. The new-game template's initial 0/0 Stamina is therefore
+  not treated as death, and all six profession choices remain available.
 - A usable forced destination pauses execution. Therefore, in section 570, an
   adventurer who wins stops at section 148. An adventurer who dies cannot use
   section 148, continues through the authored recovery effects, and then stops

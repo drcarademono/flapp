@@ -88,7 +88,10 @@ end
 
 local function destination_matches_life_state(state, attributes)
     -- GotoNode.canUse(): an omitted dead attribute means "only while alive".
-    return (state.stamina<=0)==truth(attributes.dead,false)
+    -- Java has no active Adventurer while the profession is being selected, so
+    -- the zeroed character-creation template must not count as a dead player.
+    local is_dead=state.profession~="" and state.stamina<=0
+    return is_dead==truth(attributes.dead,false)
 end
 
 function Game:mutate(name, a, direction)

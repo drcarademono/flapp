@@ -78,8 +78,16 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_destinations_match_java_alive_and_dead_states(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("local function destination_matches_life_state", source)
-        self.assertIn("(state.stamina<=0)==truth(attributes.dead,false)", source)
+        self.assertIn('local is_dead=state.profession~="" and state.stamina<=0', source)
+        self.assertIn("return is_dead==truth(attributes.dead,false)", source)
         self.assertNotIn("(self.state.stamina>0)==truth(a.dead,false)", source)
+
+    def test_new_game_profession_choices_are_not_treated_as_death_routes(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('state.profession~=""', source)
+        section = (ROOT / "book1" / "New.xml").read_text()
+        for profession in ("Liana", "Andriel", "Chalor", "Marana", "Ignatius", "Astariel"):
+            self.assertIn(f'<choice section="{profession}">', section)
 
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
