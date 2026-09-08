@@ -52,3 +52,6 @@ and the expected content vocabulary before a package is built.
 
 See [GAME_LOGIC.md](GAME_LOGIC.md) for the ordered-execution model, Java combat
 parity rules, post-combat behavior, and supported combat-related state effects.
+
+See [TEXT_PARSING_AUDIT.md](TEXT_PARSING_AUDIT.md) for a node-by-node comparison
+of Java and KOReader text parsing and the remaining presentation differences.

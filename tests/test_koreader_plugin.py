@@ -13,7 +13,7 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
                          "core/save.lua", "content/xml.lua", "content/catalog.lua",
-                         "ui/gameview.lua"):
+                         "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
 
     def test_plugin_does_not_embed_java_or_desktop_ui(self) -> None:
