@@ -133,6 +133,15 @@ tables, text and grouping nodes) recurse through their children while preserving
 mixed-content order. Images are resolved by the content catalog and shown by the
 KOReader view.
 
+Interactive text remains part of the prose at its authored XML position. An
+explicit difficulty/random label is displayed before the interaction pauses; if
+the element is empty, the same kind of default instruction as Java is generated.
+After the roll, the coroutine first finishes the containing sentence and reaches
+the matching outcome destination, then appends the roll summary. This prevents a
+result from splitting a sentence, as previously happened in book 2, section 499.
+Text-node whitespace is condensed, spaced hyphens become en dashes, and three
+periods become an ellipsis, matching `ParserHandler.condenseContent()`.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

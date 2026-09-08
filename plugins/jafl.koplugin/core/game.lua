@@ -10,10 +10,13 @@ local function words(value)
     local out = {}; for word in tostring(value or ""):gmatch("[^,|&]+") do out[#out+1] = word:match("^%s*(.-)%s*$") end
     return out
 end
+local function normalize_text(value)
+    return tostring(value or ""):gsub("%s+"," "):gsub(" %- "," – "):gsub("%.%.%.","…")
+end
 local function plain(node)
-    if type(node) == "string" then return node:gsub("%s+", " ") end
+    if type(node) == "string" then return normalize_text(node) end
     local out = {}; for _, child in ipairs(node.children or {}) do out[#out+1] = plain(child) end
-    return table.concat(out):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    return normalize_text(table.concat(out)):match("^%s*(.-)%s*$")
 end
 local function item_from(a)
     return { name=a.name or "item", quantity=tonumber(a.quantity or a.multiple) or 1, bonus=tonumber(a.bonus),
@@ -253,6 +256,7 @@ function Game:add_check(node)
     end
     self.pending_checks[#self.pending_checks+1] = check
     if a.var then self.checks_by_var[a.var] = check end
+    return label
 end
 
 function Game:attach_check_branch(node)
@@ -309,7 +313,7 @@ end
 
 function Game:walk(node, enabled)
     self.steps=self.steps+1; if self.steps > 10000 then error("section execution limit exceeded") end
-    if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=node:gsub("%s+"," ") end return end
+    if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=normalize_text(node) end return end
     local n,a=node.name,node.attr
     if n=="if" or n=="elseif" then enabled=enabled and self:condition(a)
     elseif n=="else" then enabled=enabled -- grouped else parity is handled by authored mutually-exclusive blocks where possible
@@ -337,12 +341,19 @@ function Game:walk(node, enabled)
     elseif n=="rest" then self.state.stamina=math.min(self.state.max_stamina,self.state.stamina+self:value(a.stamina or 0)); self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0))
     elseif n=="random" then
         if not a.flag or self.state.flags[a.flag] then
-            self:add_action(plain(node)~="" and plain(node) or "Roll dice","random",node)
+            local label=plain(node)
+            if label=="" then
+                local dice=tonumber(a.dice) or 2
+                label="Roll "..(dice==1 and "one die" or dice==2 and "two dice" or (dice.." dice"))
+            end
+            self.text[#self.text+1]=label
+            self:add_action(label,"random",node)
             if truth(a.force,true) then self:pause_section() end
         end
         return
     elseif n=="difficulty" or n=="rankcheck" then
-        self:add_check(node)
+        local label=self:add_check(node)
+        if label then self.text[#self.text+1]=label end
         if truth(a.force,true) then
             self:pause_section()
             for _,child in ipairs(node.children or {}) do
@@ -502,7 +513,6 @@ function Game:choose(index)
         local result = node.name=="rankcheck" and (score-roll+1) or (roll-self:value(a.level))
         self.state.variables[a.var or "*difficulty*"]=result
         if a.flag then self.state.flags[a.flag]=nil end
-        self.text[#self.text+1]="\n\n"..description
         local remaining={}
         if not truth(a.force,true) then
             local group=action.data.group or action.data
@@ -512,15 +522,16 @@ function Game:choose(index)
         end
         self.actions=remaining
         if truth(a.force,true) then self:resume_section() end
+        self.text[#self.text+1]="\n\n"..description
         return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="random" then
         local node,a=action.data,action.data.attr
         local roll=roll_dice(self,tonumber(a.dice) or 2)+self:check_adjustment(node)
         self.last_roll=roll; self.state.variables[a.var or "*random*"]=roll
         if a.flag then self.state.flags[a.flag]=nil end
-        self.text[#self.text+1]="\n\nRolled "..tostring(roll).."."
         self.actions={}
         if truth(a.force,true) then self:resume_section() end
+        self.text[#self.text+1]="\n\nRolled "..tostring(roll).."."
         return {title="Roll result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="goto" then
         local a=action.data

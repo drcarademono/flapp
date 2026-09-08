@@ -150,6 +150,21 @@ class KOReaderPluginTests(unittest.TestCase):
         section = (ROOT / "book2" / "101.xml").read_text()
         self.assertIn('<outcome range="10-12" section="499">A coven meeting</outcome>', section)
 
+    def test_interaction_text_stays_in_authored_order(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("local function normalize_text(value)", source)
+        self.assertIn(':gsub(" %- "," – "):gsub("%.%.%.","…")', source)
+        self.assertIn("if label then self.text[#self.text+1]=label end", source)
+        check_resume = source.index("if truth(a.force,true) then self:resume_section() end", source.index('if action.kind=="skillcheck"'))
+        check_result = source.index('self.text[#self.text+1]="\\n\\n"..description', check_resume)
+        self.assertLess(check_resume, check_result)
+        random_start = source.index('elseif action.kind=="random"')
+        random_resume = source.index("if truth(a.force,true) then self:resume_section() end", random_start)
+        random_result = source.index('self.text[#self.text+1]="\\n\\nRolled "', random_resume)
+        self.assertLess(random_resume, random_result)
+        section = (ROOT / "book2" / "499.xml").read_text()
+        self.assertIn("Make a MAGIC roll at a Difficulty of 11", section)
+
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
 
