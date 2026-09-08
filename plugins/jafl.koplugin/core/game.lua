@@ -355,9 +355,14 @@ function Game:walk(node, enabled)
         local label=self:add_check(node)
         if label then self.text[#self.text+1]=label end
         if truth(a.force,true) then
-            self:pause_section()
-            for _,child in ipairs(node.children or {}) do
-                if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
+            if (self.paragraph_depth or 0)>0 then
+                self.pause_after_paragraph=true
+                self.pending_check_children=node.children
+            else
+                self:pause_section()
+                for _,child in ipairs(node.children or {}) do
+                    if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
+                end
             end
         end
         return
@@ -452,6 +457,8 @@ function Game:walk(node, enabled)
         self:add_action(label,n,{attr=a,node=node,cost=cost}); return
     elseif n=="image" then self.image=self.catalog:asset_path(a.book or self.state.book,a.file or a.name); return
     end
+    local is_paragraph=n=="p"
+    if is_paragraph then self.paragraph_depth=(self.paragraph_depth or 0)+1 end
     local branch_taken=false
     local in_chain=false
     for _,child in ipairs(node.children or {}) do
@@ -469,12 +476,25 @@ function Game:walk(node, enabled)
         end
     end
     if n=="p" or n=="header" or n:match("^h%d$") then self.text[#self.text+1]="\n\n" end
+    if is_paragraph then
+        self.paragraph_depth=self.paragraph_depth-1
+        if self.paragraph_depth==0 and self.pause_after_paragraph then
+            self.pause_after_paragraph=false
+            self:pause_section()
+            local pending=self.pending_check_children or {}
+            self.pending_check_children=nil
+            for _,child in ipairs(pending) do
+                if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
+            end
+        end
+    end
 end
 
 function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.actions={}; self.steps=0; self.image=nil
+    self.paragraph_depth=0; self.pause_after_paragraph=false; self.pending_check_children=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)

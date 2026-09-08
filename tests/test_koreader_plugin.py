@@ -164,6 +164,10 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertLess(random_resume, random_result)
         section = (ROOT / "book2" / "499.xml").read_text()
         self.assertIn("Make a MAGIC roll at a Difficulty of 11", section)
+        self.assertIn("if (self.paragraph_depth or 0)>0 then", source)
+        self.assertIn("self.pause_after_paragraph=true", source)
+        self.assertIn("if self.paragraph_depth==0 and self.pause_after_paragraph then", source)
+        self.assertIn("self.paragraph_depth=0; self.pause_after_paragraph=false", source)
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)

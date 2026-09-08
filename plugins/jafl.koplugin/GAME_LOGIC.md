@@ -136,6 +136,9 @@ KOReader view.
 Interactive text remains part of the prose at its authored XML position. An
 explicit difficulty/random label is displayed before the interaction pauses; if
 the element is empty, the same kind of default instruction as Java is generated.
+When a forced check occurs inside a paragraph, execution defers its pause until
+the paragraph has finished rendering. The whole containing sentence is therefore
+visible before the roll, while nodes after the paragraph remain unexecuted.
 After the roll, the coroutine first finishes the containing sentence and reaches
 the matching outcome destination, then appends the roll summary. This prevents a
 result from splitting a sentence, as previously happened in book 2, section 499.
