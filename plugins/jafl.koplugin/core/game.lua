@@ -30,7 +30,12 @@ function Game:value(v)
     if type(v) == "number" then return v end
     local n = tonumber(v); if n then return n end
     local sign, key = v:match("^([+-]?)([%w_*.-]+)$")
-    if key then n = self.state.variables[key] or 0; return sign == "-" and -n or n end
+    if key then
+        n = self.state.variables[key]
+        if n == nil then n = self.state.abilities[key:gsub("^%l", string.upper)] end
+        n = n or 0
+        return sign == "-" and -n or n
+    end
     local dice, sides, add = v:match("^(%d+)[dD](%d+)([+-]?%d*)$")
     if dice then
         local total = tonumber(add) or 0
@@ -89,6 +94,18 @@ end
 
 local function ability_key(name)
     return name and name:gsub("^%l", string.upper)
+end
+
+local function roll_dice(game, count)
+    local total = 0
+    for _=1,count do total = total + game.random(6) end
+    return total
+end
+
+-- FightNode.java does not use a fixed weapon/enemy damage value.  A successful
+-- attack deals the entire amount by which (dice + COMBAT) beats Defence.
+local function combat_damage(roll, defence)
+    return math.max(0, roll - defence)
 end
 
 function Game:check_adjustment(node)
@@ -275,24 +292,74 @@ function Game:choose(index)
         end
         return self:load(a.book or self.state.book,a.section)
     elseif action.kind=="fight" then
-        local a=action.data.attr; local enemy_stamina=self:value(a.stamina or a.endurance or 1)
-        local enemy_defence=self:value(a.defence or 0); local rounds=0
-        while enemy_stamina>0 and self.state.stamina>0 and rounds<100 do
-            rounds=rounds+1
-            local attack=self.random(6)+self.random(6)+(self.state.abilities.Combat or 0)
-            if attack>enemy_defence then enemy_stamina=enemy_stamina+math.min(-1,-self:value(a.damage or 1)) end
-            if enemy_stamina>0 then
-                local defence=self.random(6)+self.random(6)+self.state.defence
-                if defence<=self:value(a.combat or a.attack or 0) then self.state.stamina=math.max(0,self.state.stamina-self:value(a.damage or 1)) end
+        local a=action.data.attr
+        local enemy_stamina=self:value(a.stamina or a.endurance or 1)
+        local enemy_defence=self:value(a.defence or 0)
+        local enemy_combat=self:value(a.combat or a.attack or 0)
+        local flee_at=math.max(0,self:value(a.flee or 0))
+        local player_defence=a.playerDefence and self:value(a.playerDefence) or self.state.defence
+        local attack_dice=tonumber(a.attackDice) or 2
+        local enemy_attacks=tonumber(a.attacks) or 1
+        local player_first=truth(a.playerFirst,true)
+        local rounds,log=0,{}
+
+        local pre_damage=a.preDamage and self:value(a.preDamage) or 0
+        if pre_damage>0 then
+            local dealt=math.min(pre_damage,enemy_stamina)
+            enemy_stamina=enemy_stamina-dealt
+            log[#log+1]=string.format("Before combat, %s takes %d damage.",a.name or "the enemy",dealt)
+            if a.staminaLost then self.state.variables[a.staminaLost]=(self.state.variables[a.staminaLost] or 0)+dealt end
+        end
+
+        local function enemy_turn()
+            for attack_number=1,enemy_attacks do
+                if self.state.stamina<=0 then break end
+                local roll=roll_dice(self,2)+enemy_combat
+                local damage=combat_damage(roll,player_defence)
+                if damage>0 then
+                    if a.abilityDamaged and a.abilityDamaged:lower()~="stamina" then
+                        local ability=ability_key(a.abilityDamaged)
+                        self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-damage)
+                    else
+                        self.state.stamina=math.max(0,self.state.stamina-damage)
+                    end
+                end
+                local suffix=enemy_attacks>1 and string.format(" (attack %d)",attack_number) or ""
+                log[#log+1]=string.format("%s rolls %d against Defence %d%s: %s.",a.name or "Enemy",roll,
+                    player_defence,suffix,damage>0 and (damage.." damage") or "miss")
             end
         end
-        self.text[#self.text+1]=self.state.stamina>0 and "\n\nYou win the fight." or "\n\nYou have been defeated."
-        self.actions={}
-        for _,c in ipairs(action.data.children) do
-            if type(c)=="table" and ((self.state.stamina>0 and (c.name=="success" or c.name=="outcome")) or
-                    (self.state.stamina<=0 and c.name=="failure")) then self:walk(c,true) end
+
+        while enemy_stamina>flee_at and self.state.stamina>0 and rounds<100 do
+            rounds=rounds+1
+            if not player_first then enemy_turn(); player_first=true end
+            if self.state.stamina<=0 then break end
+            local roll=roll_dice(self,attack_dice)+(self.state.abilities.Combat or 0)
+            local damage=combat_damage(roll,enemy_defence)
+            enemy_stamina=math.max(0,enemy_stamina-damage)
+            if a.staminaLost and damage>0 then self.state.variables[a.staminaLost]=(self.state.variables[a.staminaLost] or 0)+damage end
+            log[#log+1]=string.format("You roll %d against %s's Defence %d: %s. (%d Stamina left)",roll,
+                a.name or "the enemy",enemy_defence,damage>0 and (damage.." damage") or "miss",enemy_stamina)
+            if enemy_stamina>flee_at then enemy_turn() end
         end
-        return {title="Combat result",text=table.concat(self.text),actions=self.actions}
+
+        local won=enemy_stamina<=flee_at and self.state.stamina>0
+        self.text[#self.text+1]="\n\n"..table.concat(log,"\n").."\n\n"..(won and "You win the fight." or "You have been defeated.")
+
+        -- Walking a section has already discovered the actions after this fight.
+        -- Keep them, rather than leaving the result screen as the old dead end.
+        local remaining={}
+        for _,candidate in ipairs(self.actions) do
+            if candidate~=action then remaining[#remaining+1]=candidate end
+        end
+        self.actions={}
+        if won and #remaining>0 then
+            self:add_action("Continue adventure","combat_continue",{actions=remaining})
+        end
+        return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_continue" then
+        self.actions=action.data.actions
+        return {title="Adventure continues",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="market" then
         self.actions={}; self.text={"Choose a transaction."}
         for _,child in ipairs(action.data.children) do self:walk(child,true) end
