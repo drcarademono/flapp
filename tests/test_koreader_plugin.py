@@ -15,7 +15,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "core/combat.lua", "core/character.lua", "core/rules.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "core/combat.lua", "core/character.lua", "core/rules.lua", "core/stats.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -88,8 +88,16 @@ class KOReaderPluginTests(unittest.TestCase):
 
     def test_loss_effects_support_java_recovery_semantics(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
+        stats = (PLUGIN / "core" / "stats.lua").read_text()
         self.assertIn("if a.staminato then", source)
         self.assertIn('if (a.shards=="*" or a.gold=="*") and direction<0', source)
+        self.assertIn("Stats.damage(s,self:value(a.stamina))", source)
+        self.assertIn("function Stats.adjust", stats)
+        self.assertIn("target=math.max(1,math.min(12,target))", stats)
+        self.assertIn("if death then state.stamina=0 end", stats)
+        self.assertIn('special=="difficultycurse"', source)
+        self.assertIn('special=="armourlock"', source)
+        self.assertIn('cache.rules.frozen=', source)
 
     def test_destinations_match_java_alive_and_dead_states(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
@@ -130,6 +138,13 @@ class KOReaderPluginTests(unittest.TestCase):
         section = (ROOT / "book1" / "330.xml").read_text()
         self.assertIn('<if not="t" book="2">', section)
         self.assertIn('<goto book="2" section="217">', section)
+
+    def test_if_nodes_use_java_alternative_condition_families(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:if_condition(a)", game)
+        self.assertIn('self:if_condition(a)', game)
+        self.assertIn('s.models.section_ticks[s.book..":"..s.section]', game)
+        self.assertIn('name=="tick" and a.name', game)
 
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()

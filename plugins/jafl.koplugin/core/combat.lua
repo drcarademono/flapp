@@ -17,7 +17,8 @@ function Combat.start(game,node,opponents)
             playerfirst=truth(a.playerfirst,true),modifiers=a.modifiers}
     end
     local potion=require("core/inventory").consume_potion_bonus(game.state,"Combat")
-    game.state.combat={schema=1,owner=node._path,group=node.attr.group,active=1,round=0,opponents=list,log={},combat_potion=potion}
+    local cached=game.state.models.combat_bonus or {attack=0,defence=0}; game.state.models.combat_bonus={attack=0,defence=0}
+    game.state.combat={schema=1,owner=node._path,group=node.attr.group,active=1,round=0,opponents=list,log={},combat_potion=potion,attack_bonus=cached.attack or 0,defence_bonus=cached.defence or 0}
     for _,enemy in ipairs(list) do if enemy.predamage>0 then
         local loss=math.min(enemy.predamage,enemy.stamina); enemy.stamina=enemy.stamina-loss; enemy.predamage_applied=true
         game.state.combat.log[#game.state.combat.log+1]=string.format("Before combat, %s takes %d damage.",enemy.name,loss)
@@ -80,7 +81,7 @@ function Combat.attack(game,hook)
     if not enemy.opened and not enemy.playerfirst and Combat.enemy_turn(game,enemy,hook) then enemy.opened=true; return "blocked" end
     enemy.opened=true
     if game.state.stamina<=0 then return "lost" end
-    local roll=game:ability("Combat")+(combat.combat_potion or 0); for _=1,enemy.attackdice do roll=roll+game:roll(6) end
+    local roll=game:ability("Combat")+(combat.combat_potion or 0)+(combat.attack_bonus or 0); for _=1,enemy.attackdice do roll=roll+game:roll(6) end
     local loss=damage(roll,enemy.defence); enemy.stamina=math.max(0,enemy.stamina-loss)
     if enemy.staminalost and loss>0 then game.state.variables[enemy.staminalost]=(game.state.variables[enemy.staminalost] or 0)+loss end
     combat.log[#combat.log+1]=string.format("You roll %d against %s's Defence %d: %s. (%d Stamina left)",roll,enemy.name,enemy.defence,loss>0 and loss.." damage" or "miss",enemy.stamina)

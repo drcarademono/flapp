@@ -33,15 +33,19 @@ end
 function Inventory.equip(state,item)
     if item.kind=="weapon" or item.kind=="armour" then
         local slot=item.kind
+        if state.models.equipment[slot.."_locked"] then return false,"The "..slot.." slot is locked." end
         for _,candidate in ipairs(state.items) do if candidate.kind==slot then candidate.equipped=false end end
         item.equipped=true; state.models.equipment[slot]=item.id
     elseif item.kind=="tool" then item.equipped=true; state.models.equipment.tools[item.id]=true end
+    return true
 end
 
 function Inventory.unequip(state,item)
+    if (item.kind=="weapon" or item.kind=="armour") and state.models.equipment[item.kind.."_locked"] then return false end
     item.equipped=false
     if state.models.equipment[item.kind]==item.id then state.models.equipment[item.kind]=nil end
     if item.kind=="tool" then state.models.equipment.tools[item.id]=nil end
+    return true
 end
 
 local function effects_from(state,modifier)

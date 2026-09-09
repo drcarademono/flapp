@@ -4,6 +4,7 @@ package.path=root.."/plugins/jafl.koplugin/?.lua;"..root.."/plugins/jafl.koplugi
 local Game=require("core/game")
 local Inventory=require("core/inventory")
 local State=require("core/state")
+local Stats=require("core/stats")
 local oracle=require("java_oracle")
 
 local function equal(actual,expected,label)
@@ -135,7 +136,30 @@ local function blessing_prompts()
     assert(fight:choose(1)); equal(combat_state.combat.defence_bonus,4,"defence blessing bonus")
 end
 
+local function adventurer_stat_rules()
+    local state=ready_state(); state.abilities.Combat=11; state.models.stats.natural.Combat=11
+    equal(Stats.adjust(state,"Combat",5,false),1,"ability upper cap")
+    equal(Stats.adjust(state,"Combat",-99,false),-11,"nonfatal ability floor")
+    equal(state.stamina,20,"nonfatal ability loss")
+    Stats.adjust(state,"Combat",-1,true); equal(state.stamina,0,"fatal ability underflow")
+    state.stamina=10; state.max_stamina=20; state.rank=2
+    Stats.adjust(state,"Rank",1,false); equal(state.rank,3,"rank adjustment")
+    equal(state.max_stamina,20,"rank does not adjust maximum stamina")
+    Stats.damage(state,4); equal(state.stamina,6,"stamina damage")
+    Stats.heal(state,-1); equal(state.stamina,20,"full stamina heal")
+    local game=Game.new(catalog("forced_random.xml"),state,function() return 1 end)
+    game:mutate("tick",{special="difficultyCurse"},1); equal(state.models.stats.difficulty_dice,1,"difficulty curse")
+    game:mutate("tick",{special="attack",bonus="3"},1); equal(state.models.combat_bonus.attack,3,"cached attack bonus")
+    game:mutate("tick",{special="lock",cache="oracle"},1); assert(state.caches.oracle.rules.frozen)
+    state.codewords.Alpha=true; state.shards=0
+    assert(game:if_condition{codeword="Missing",shards="999",profession="wayfarer"})
+    assert(not game:if_condition{codeword="Missing",shards="999"})
+    game:apply_tick_count({}); equal(state.models.section_ticks["1:test"],1,"section tick count")
+    game:mutate("tick",{name="merit",amount="2"},1); equal(state.codewords.merit,2,"numeric codeword")
+end
+
 effects_and_afflictions()
 embedded_use_program()
 blessing_prompts()
+adventurer_stat_rules()
 io.write("Lua Java-oracle scenarios passed\n")

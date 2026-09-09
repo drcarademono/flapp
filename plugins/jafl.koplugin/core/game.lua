@@ -8,6 +8,7 @@ local Journal = require("core/journal")
 local Rules = require("core/rules")
 local Ships = require("core/ships")
 local State = require("core/state")
+local Stats = require("core/stats")
 
 local Game = {}; Game.__index = Game
 local function truth(v, default)
@@ -98,7 +99,7 @@ function Game:condition(a)
     local s, ok = self.state, true
     if a.codeword then
         ok = a.codeword:find("&",1,true) and true or false
-        for _,w in ipairs(words(a.codeword)) do if ok then ok = s.codewords[w] == true else ok = ok or s.codewords[w] == true end end
+        for _,w in ipairs(words(a.codeword)) do if ok then ok = s.codewords[w] ~= nil else ok = ok or s.codewords[w] ~= nil end end
     end
     if ok and a.title then ok=false; for _,v in ipairs(words(a.title)) do ok=ok or s.titles[v] end end
     if ok and a.god then ok = s.gods[a.god] == true end
@@ -158,6 +159,55 @@ function Game:condition(a)
     return ok
 end
 
+-- IfNode.meetsConditions() treats distinct condition families as alternatives;
+-- only the values inside a codeword/title list use their authored AND/OR join.
+function Game:if_condition(a)
+    local s=self.state; local tested=false
+    local function yes(value) tested=true; return value and true or false end
+    local function success() return not truth(a["not"],false) end
+    local function compared(value)
+        if a.greaterthan then return value>self:value(a.greaterthan) end
+        if a.lessthan then return value<self:value(a.lessthan) end
+        if a.equals then return value==self:value(a.equals) end
+        return value~=nil
+    end
+    if a.codeword then
+        local joined=a.codeword:find("&",1,true)~=nil; local matched=joined
+        for _,word in ipairs(words(a.codeword)) do
+            if joined then matched=matched and s.codewords[word]~=nil else matched=matched or s.codewords[word]~=nil end
+        end
+        if yes(matched) then return success() end
+    end
+    if a.god and yes((a.god=="*" and next(s.gods)~=nil) or (a.god=="" and next(s.gods)==nil) or s.gods[a.god]) then return success() end
+    if a.safeaddgod then
+        local safe=not s.gods[a.safeaddgod] and (next(s.gods)==nil)
+        if yes(safe) then return success() end
+    end
+    if a.title then
+        local joined=a.title:find("&",1,true)~=nil; local matched=joined
+        for _,title in ipairs(words(a.title)) do if joined then matched=matched and s.titles[title]~=nil else matched=matched or s.titles[title]~=nil end end
+        if yes(matched) then return success() end
+    end
+    if a.ticks~=nil then
+        local section_ticks=s.models.section_ticks[s.book..":"..s.section] or 0
+        if yes(section_ticks==self:value(a.ticks)) then return success() end
+    end
+    if a.name~=nil and yes(compared(s.codewords[a.name])) then return success() end
+    if a.var~=nil and yes(compared(s.variables[a.var])) then return success() end
+    if a.ability~=nil and yes(compared(self:ability(a.ability,a.modifier))) then return success() end
+    local probes={"shards","book","gender","item","weapon","armour","tool","blessing","curse","disease","poison","resurrection","docked","ship","crew","cargo","profession","dead"}
+    for _,probe in ipairs(probes) do if a[probe]~=nil then
+        local one=State.copy(a)
+        for _,other in ipairs(probes) do if other~=probe then one[other]=nil end end
+        one["not"]=nil
+        if yes(self:condition(one)) then return not truth(a["not"],false) end
+    end end
+    local result=false
+    if not tested then result=true end
+    if truth(a["not"],false) then return not result end
+    return result
+end
+
 local function destination_matches_life_state(state, attributes)
     -- GotoNode.canUse(): an omitted dead attribute means "only while alive".
     -- Java has no active Adventurer while the profession is being selected, so
@@ -169,8 +219,10 @@ end
 function Game:mutate(name, a, direction)
     local s = self.state
     if a.staminato then
-        s.stamina=math.max(0,math.min(s.max_stamina,self:value(a.staminato)))
+        local target=self:value(a.staminato)
+        if target<s.stamina then Stats.damage(s,s.stamina-target) else Stats.heal(s,target-s.stamina) end
     end
+    if a.stamina and direction<0 then Stats.damage(s,self:value(a.stamina)) end
     if (a.shards=="*" or a.gold=="*") and direction<0 then
         s.shards=0
     end
@@ -184,6 +236,21 @@ function Game:mutate(name, a, direction)
             if a.addbonus then item.bonus=(tonumber(item.bonus) or 0)+self:value(a.addbonus) end
             break
         end end
+        return
+    end
+    if a.special then
+        local special=tostring(a.special):lower()
+        if special:match("^attack") then s.models.combat_bonus.attack=self:value(a.bonus or 0)
+        elseif special:match("^defence") then s.models.combat_bonus.defence=self:value(a.bonus or 3)
+        elseif special=="armourlock" then s.models.equipment.armour_locked=true
+        elseif special=="weaponlock" then s.models.equipment.weapon_locked=true
+        elseif special=="difficultycurse" then s.models.stats.difficulty_dice=1
+        elseif special=="difficultyrestore" then s.models.stats.difficulty_dice=math.max(2,s.models.stats.difficulty_dice or 2)
+        elseif special:match("^godless") then s.godless=true
+        elseif a.cache and (special=="lock" or special=="freeze" or special=="unlock" or special=="thaw") then
+            local cache=Inventory.cache(s,a.cache,a)
+            cache.rules.frozen=special=="lock" or special=="freeze"
+        end
         return
     end
     local amount = self:value(a.amount or a.value or a.stamina or 1) * direction
@@ -202,18 +269,13 @@ function Game:mutate(name, a, direction)
         return
     end
     local ability = a.ability and a.ability:gsub("^%l", string.upper)
-    if ability == "Stamina" then s.stamina = math.max(0, math.min(s.max_stamina, s.stamina + amount))
-    elseif ability == "Rank" then
-        s.rank = math.max(0, s.rank + amount)
-        s.max_stamina=math.max(1,s.max_stamina+amount); s.stamina=math.min(s.stamina,s.max_stamina)
-    elseif ability=="All" then
-        for _,name in ipairs(State.ability_names) do
-            s.abilities[name]=math.max(0,math.min(12,(s.abilities[name] or 0)+amount)); s.models.stats.natural[name]=s.abilities[name]
-        end
+    if ability=="All" then
+        for _,stat_name in ipairs(State.ability_names) do Stats.adjust(s,stat_name,amount,truth(a.fatal,false)) end
     elseif ability and ability~="?" then
-        s.abilities[ability]=math.max(0,math.min(12,(s.abilities[ability] or 0)+amount)); s.models.stats.natural[ability]=s.abilities[ability]
+        Stats.adjust(s,ability,amount,truth(a.fatal,false))
     elseif a.shards or a.gold or name == "adjustmoney" then s.shards = math.max(0, s.shards + self:value(a.shards or a.gold or a.amount) * direction)
     elseif a.codeword then for _,v in ipairs(words(a.codeword)) do s.codewords[v] = direction > 0 or nil end
+    elseif name=="tick" and a.name then s.codewords[a.name]=(tonumber(s.codewords[a.name]) or 0)+self:value(a.amount or a.count or 1)
     elseif a.title then
         for _,v in ipairs(words(a.title)) do
             if a.titlepattern then
@@ -222,6 +284,7 @@ function Game:mutate(name, a, direction)
             else s.titles[v] = direction > 0 or nil end
         end
     elseif a.god then s.gods[a.god] = direction > 0 or nil
+    elseif a.profession and direction>0 then s.profession=words(a.profession)[1]:gsub("^%l",string.upper)
     elseif a.flag then s.flags[a.flag] = direction > 0 or nil
     elseif a.blessing then if direction>0 then Inventory.bless(s,a) else s.blessings[a.blessing]=nil end
     elseif a.curse then if direction<0 then Inventory.lift(s,"curse",a.curse) end
@@ -235,6 +298,15 @@ function Game:mutate(name, a, direction)
             item.weapon=a.weapon~=nil or item.weapon; item.armour=a.armour~=nil or item.armour; item.tool=a.tool~=nil
             State.add_item(s,item)
         else State.remove_matching_items(s,a,self:value(a.multiple or 1)) end
+    end
+end
+
+function Game:apply_tick_count(attributes)
+    local count=attributes.count and self:value(attributes.count) or (next(attributes)==nil and 1 or 0)
+    if count~=0 then
+        self.state.ticks=self.state.ticks+count
+        local key=self.state.book..":"..self.state.section
+        self.state.models.section_ticks[key]=(self.state.models.section_ticks[key] or 0)+count
     end
 end
 
@@ -424,7 +496,7 @@ function Game:visible_text()
 end
 
 function Game:route_death()
-    if self.state.profession=="" or self.state.stamina>0 or #self.actions>0 then return end
+    if self.state.profession=="" or not Stats.dead(self.state) or #self.actions>0 then return end
     if self.state.resurrection then
         self:add_action("Use arranged resurrection","resurrect",self.state.resurrection)
         return
@@ -509,6 +581,7 @@ function Game:open_cache(node,message)
     local a=node.attr; local key=a.name or "cache"; local cache=Inventory.cache(self.state,key,a,node)
     self.actions={}; self.text={message or (a.text or "Manage stored possessions.")}
     self:add_action("Leave cache","leave_cache",{node=node,key=key})
+    if cache.rules.frozen then self.text[#self.text+1]="This cache is locked."; return end
     local unit=cache.rules.multiples or 1
     if self.state.shards>=unit and (not cache.rules.maximum or cache.shards+unit<=cache.rules.maximum) then
         self:add_action("Deposit "..unit.." Shards","cache_money",{node=node,key=key,amount=unit})
@@ -773,7 +846,7 @@ function Game:walk(node, enabled)
     if mutation and self.restoring and self.state.progress.applied[node._path] then return end
     local optional_mutation=(n=="tick" or n=="gain" or n=="lose") and not truth(a.force,true)
     if mutation and not optional_mutation then self.state.progress.applied[node._path]=true end
-    if n=="if" or n=="elseif" then enabled=enabled and self:condition(a)
+    if n=="if" or n=="elseif" then enabled=enabled and self:if_condition(a)
     elseif n=="else" then enabled=enabled -- grouped else parity is handled by authored mutually-exclusive blocks where possible
     end
     if not enabled then return end
@@ -830,7 +903,7 @@ function Game:walk(node, enabled)
     elseif n=="tick" then
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Apply gain","mutate",{node=node,direction=1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
-        self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
+        self:apply_tick_count(a); self:mutate(n,a,1)
         if a.god then Inventory.attach_god_effects(self.state,a.god,node) end
     elseif n=="gain" then
         if a.ability=="?" then
@@ -1184,7 +1257,7 @@ function Game:_choose(index)
         return {title="Ship selected",text="Selected "..ship.name..".",actions=self.actions,image=self.image}
     elseif action.kind=="equip" then
         local item=self.state.items[action.data.index]; if not item then return nil,"Item is no longer available." end
-        Inventory.equip(self.state,item)
+        local equipped,equip_error=Inventory.equip(self.state,item); if not equipped then return nil,equip_error end
         for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
         return {title="Equipment",text="Equipped "..item.name..".",actions=self.actions,image=self.image}
     elseif action.kind=="use_item" then
@@ -1205,7 +1278,7 @@ function Game:_choose(index)
         local attributes=State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end
         self:mutate(node.name,attributes,action.data.direction)
         if action.data.direction>0 and node.attr.god then Inventory.attach_god_effects(self.state,node.attr.god,node) end
-        if node.name=="tick" then self.state.ticks=self.state.ticks+self:value(node.attr.count or node.attr.amount or 1) end
+        if node.name=="tick" then self:apply_tick_count(node.attr) end
         self.state.progress.applied[node._path]=true
         for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
         return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
@@ -1266,7 +1339,8 @@ function Game:_choose(index)
                 roll=roll_dice(self,tonumber(a.dice) or 1)+self:value(a.add or 0)+adjustment
                 self.state.variables[a.var or "*difficulty*"]=self.state.rank-roll+1
             else
-                roll=self:roll(6)+self:roll(6)+score+adjustment
+                roll=score+adjustment
+                for _=1,(self.state.models.stats.difficulty_dice or 2) do roll=roll+self:roll(6) end
                 self.state.variables[a.var or "*difficulty*"]=roll-self:value(a.level)
             end
             return {title="Reroll result",text=ability_key(ability).." reroll: "..roll..".",actions=self.actions,image=self.image}
@@ -1307,7 +1381,8 @@ function Game:_choose(index)
         else
             local chosen=action.data.ability or words(a.ability)[1]
             score=self:ability(chosen)+adjustment+Inventory.consume_potion_bonus(self.state,ability_key(chosen))
-            roll=self:roll(6)+self:roll(6)+score
+            roll=score
+            for _=1,(self.state.models.stats.difficulty_dice or 2) do roll=roll+self:roll(6) end
             success=roll>self:value(a.level)
             description=string.format("%s check: rolled %d against Difficulty %d — %s.",
                 ability_key(chosen),roll,self:value(a.level),success and "success" or "failure")

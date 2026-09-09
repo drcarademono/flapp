@@ -5,10 +5,10 @@ State.ability_names = { "Charisma", "Combat", "Magic", "Sanctity", "Scouting", "
 
 local function empty_models()
     return {
-        stats={natural={},modifiers={},derived={}}, equipment={weapon=nil,armour=nil,tools={}},
+        stats={natural={},modifiers={},derived={},difficulty_dice=2}, equipment={weapon=nil,armour=nil,tools={},weapon_locked=false,armour_locked=false},
         afflictions={blessings={},curses={},diseases={},poisons={}},
         fleet={active=nil,ships={},location="*land*",next_id=1}, rules={fixed={},temporary={}}, god_effects={}, next_item_id=1, visits={},
-        extra_choices={}, cache_metadata={}, potions={},
+        extra_choices={}, cache_metadata={}, potions={}, combat_bonus={attack=0,defence=0}, section_ticks={},
     }
 end
 
@@ -101,7 +101,9 @@ function State.validate(s)
     s.undo=s.undo or {}
     s.execution=s.execution or {frames={}}; s.execution.frames=s.execution.frames or {}
     s.models.stats=s.models.stats or {natural={},modifiers={},derived={}}
+    s.models.stats.difficulty_dice=s.models.stats.difficulty_dice or 2
     s.models.equipment=s.models.equipment or {weapon=nil,armour=nil,tools={}}
+    s.models.equipment.tools=s.models.equipment.tools or {}; s.models.equipment.weapon_locked=s.models.equipment.weapon_locked or false; s.models.equipment.armour_locked=s.models.equipment.armour_locked or false
     s.models.afflictions=s.models.afflictions or {blessings={},curses={},diseases={},poisons={}}
     s.models.fleet=s.models.fleet or {active=nil,ships={}}
     s.models.fleet.location=s.models.fleet.location or "*land*"; s.models.fleet.next_id=s.models.fleet.next_id or 1
@@ -115,6 +117,8 @@ function State.validate(s)
     s.models.visits=s.models.visits or {}; s.models.extra_choices=s.models.extra_choices or {}
     s.models.cache_metadata=s.models.cache_metadata or {}
     s.models.potions=s.models.potions or {}
+    s.models.combat_bonus=s.models.combat_bonus or {attack=0,defence=0}
+    s.models.section_ticks=s.models.section_ticks or {}
     s.models.afflictions.blessings=s.blessings; s.models.afflictions.curses=s.curses
     s.models.afflictions.diseases=s.diseases; s.models.afflictions.poisons=s.poisons
     s.models.fleet.ships=s.ships

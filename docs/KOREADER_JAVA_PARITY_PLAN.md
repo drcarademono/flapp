@@ -251,6 +251,11 @@ blessing, potion, and nested-result mutation cases.
 
 ### D1. Adventurer model
 
+**In progress:** `core/stats.lua` now centralizes Java-style 1–12 basic ability
+bounds, nonfatal floors, fatal underflow death, independent Rank adjustment,
+maximum/current Stamina adjustment, damage/healing, and death detection. Oracle
+comparison and migration away from the legacy Defence field remain required.
+
 - [ ] Establish one source for natural ability, affected ability, testing value,
   Rank, current/max Stamina, and derived Defence.
 - [ ] Remove or formally migrate the legacy scalar Defence field.
@@ -281,6 +286,12 @@ blessing, potion, and nested-result mutation cases.
 
 ### E1. Conditions
 
+**In progress:** `IfNode` evaluation now follows Java's alternative condition
+families rather than incorrectly requiring every distinct attribute family to
+match. Numeric codewords and section-local tick equality are represented.
+Complete ship/god compatibility, item-filter, listener, and oracle coverage is
+still required.
+
 - [ ] Port every Java condition attribute and modifier, including natural versus
   affected abilities, `safeaddgod`, `using`, numeric titles/codewords, caches,
   resurrection, ships, crew, cargo, groups, filters, wildcards, and negation.
@@ -308,6 +319,11 @@ blessing, potion, and nested-result mutation cases.
 ## 9. Workstream F — gain, loss, tick, rest, and price
 
 ### F1. Tick/gain/adjust
+
+**In progress:** special attack/Defence bonuses, difficulty curse/restore,
+weapon/armour locks, godless state, cache lock/thaw, numeric codewords, and
+section-local tick counts now have explicit model behavior. Interactive choices
+and executable Java-oracle comparison remain open.
 
 - [ ] Implement every observed `tick`/`gain` attribute and Java default.
 - [ ] Complete ability choice, profession choice, god compatibility, permanent
