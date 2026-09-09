@@ -271,6 +271,17 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('<difficulty ability="scouting" level="12" force="f">', section)
         self.assertIn('<failure section="213">Failed attempt to swim</failure>', section)
 
+    def test_outcomes_keep_non_roll_fallback_choices(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        outcomes = source[source.index('elseif n=="outcomes"'):source.index('elseif n=="outcome" then')]
+        self.assertIn("if value==nil then", outcomes)
+        self.assertIn('child.name=="choice" then self:walk(child,true)', outcomes)
+        self.assertIn("self:attach_check_branch(child)", outcomes)
+        section = (ROOT / "book2" / "543.xml").read_text()
+        self.assertIn('<if item="parchment">', section)
+        self.assertIn('<difficulty ability="scouting" level="15">', section)
+        self.assertIn('<choice section="518">No <b>parchment</b></choice>', section)
+
     def test_text_parsing_audit_tracks_platform_only_differences(self) -> None:
         audit = (PLUGIN / "TEXT_PARSING_AUDIT.md").read_text()
         self.assertIn("Java-compatible plain-text semantics now implemented", audit)

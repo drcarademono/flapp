@@ -231,6 +231,13 @@ the unrelated ordinary choices remain available. Section-local random and
 difficulty result slots are cleared whenever a new section loads, preventing a
 previous page's roll from activating a new page's branch.
 
+An `outcomes` container may also contain ordinary `choice` nodes alongside its
+roll-dependent branches. If no check result exists—because a surrounding
+condition prevented the check from being offered—those ordinary choices still
+execute and remain usable, while `success` and `failure` stay dormant. In book 2,
+section 543, possessing a parchment exposes the forced SCOUTING roll; without a
+parchment, the player instead receives the authored “No parchment” exit.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

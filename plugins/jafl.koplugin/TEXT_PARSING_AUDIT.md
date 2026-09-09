@@ -32,6 +32,8 @@ Generated roll and combat summaries are appended after that continuation has
 been rendered, keeping diagnostics out of the middle of authored sentences.
 Success and failure descriptions attached to optional checks remain dormant UI
 labels until the check is made; they are not flattened into the main prose.
+Ordinary choices colocated in an `outcomes` container do not depend on a roll and
+remain available when a conditional check was never offered.
 
 The remaining differences are primarily platform presentation differences:
 

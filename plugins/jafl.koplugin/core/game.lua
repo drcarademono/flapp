@@ -571,6 +571,19 @@ function Game:walk(node, enabled)
         local default_var=has_check_branch and "*difficulty*" or "*random*"
         local value=self.state.variables[a.var or default_var]
         if value==nil and not has_check_branch then value=self.last_roll end
+        if value==nil then
+            -- A conditional/optional check may never have been offered. Java
+            -- still executes ordinary ChoiceNodes in the outcomes container
+            -- (for example the "No parchment" exit in 2.543), while leaving
+            -- success/failure destinations dormant until a result exists.
+            for _,child in ipairs(node.children or {}) do
+                if type(child)=="table" and child.name=="choice" then self:walk(child,true)
+                elseif type(child)=="table" and (child.name=="success" or child.name=="failure") then
+                    self:attach_check_branch(child)
+                end
+            end
+            return
+        end
         for _,c in ipairs(node.children or {}) do
             if type(c)=="table" then
                 local matched=c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr)
