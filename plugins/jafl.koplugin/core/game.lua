@@ -245,8 +245,10 @@ function Game:pause_section()
     -- KOReader uses LuaJIT, whose optional second coroutine.running() result is
     -- not portable across its Lua 5.1/5.2 compatibility configurations.  The
     -- runner identity is unambiguous and works in every supported build.
-    if running and running==self.section_runner then
+    if running and running==(self.active_runner or self.section_runner) then
         local node=self.blocking_node or self.current_node
+        local frames=self.state.execution and self.state.execution.frames
+        if frames and frames[#frames] then frames[#frames].instruction=node and node._path or nil end
         self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,
             instruction=node and node._path or nil,actions={}}
         for _,action in ipairs(self.actions) do
@@ -258,10 +260,18 @@ function Game:pause_section()
 end
 
 function Game:resume_section()
-    if not self.section_runner or coroutine.status(self.section_runner)=="dead" then return true end
-    local ok,err=coroutine.resume(self.section_runner)
+    local runner=self.active_runner or self.section_runner
+    if not runner or coroutine.status(runner)=="dead" then return true end
+    local ok,err=coroutine.resume(runner)
     if not ok then error(err) end
-    return coroutine.status(self.section_runner)=="dead"
+    local finished=coroutine.status(runner)=="dead"
+    if finished and self.nested_outer_runner then
+        self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame then frame.completed=true end
+        self:add_action("Continue combat","combat_continue",{instruction=self.state.combat and self.state.combat.owner})
+    end
+    return finished
 end
 
 local function ability_key(name)
@@ -309,11 +319,28 @@ local function pair_fight_nodes(root)
     return by_path,groups,flee_choices
 end
 
+function Game:start_combat_hook(hook,kind,path,replacement,reuse_frame)
+    local frame=reuse_frame or {kind="combat_hook",hook_kind=kind,enemy=path,hook_path=hook._path,replacement=replacement}
+    if not reuse_frame then self.state.execution.frames[#self.state.execution.frames+1]=frame end
+    self.nested_outer_runner=self.active_runner or self.section_runner
+    self.actions={}
+    local runner=coroutine.create(function() for _,child in ipairs(hook.children or {}) do self:walk(child,true) end end)
+    self.active_runner=runner
+    local ok,error_message=coroutine.resume(runner); if not ok then error(error_message) end
+    if coroutine.status(runner)=="dead" then
+        self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
+        table.remove(self.state.execution.frames)
+        return false
+    end
+    return true
+end
+
 function Game:combat_hook(kind,path)
     local node=self.nodes_by_path[path]; if not node then return end
     local hook=kind=="damage" and node.fightdamage or kind=="round" and node.fightround or node.flee_node
-    for _,child in ipairs(hook and hook.children or {}) do self:walk(child,true) end
-    return hook and kind=="damage" and tostring(hook.attr.type or ""):match("^repl")~=nil
+    if not hook then return false,false end
+    local replacement=kind=="damage" and tostring(hook.attr.type or ""):match("^repl")~=nil
+    return self:start_combat_hook(hook,kind,path,replacement),replacement
 end
 
 function Game:preview_after(node)
@@ -944,12 +971,22 @@ function Game:load(book, section)
     if not self.restoring then self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil end
     self.pending_checks={}; self.checks_by_var={}
     self.nodes_by_path,self.fight_groups,self.flee_choices=pair_fight_nodes(root)
-    self.section_runner=coroutine.create(function() self:walk(root,true) end)
+    self.section_runner=coroutine.create(function() self:walk(root,true) end); self.active_runner=self.section_runner
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
     if self.state.combat and self.state.combat.book==self.state.book and self.state.combat.section==self.state.section then
-        self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
-        if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
-        for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame and frame.kind=="combat_hook" then
+            self.actions={}
+            if frame.completed then self:add_action("Continue combat","combat_continue",{instruction=self.state.combat.owner})
+            else
+                local hook=self.nodes_by_path[frame.hook_path]
+                if hook then self:start_combat_hook(hook,frame.hook_kind,frame.enemy,frame.replacement,frame) end
+            end
+        else
+            self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
+            if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
+            for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
+        end
     end
     if self.restoring and pending and (pending.resume_kind=="market" or pending.resume_kind=="buy" or pending.resume_kind=="sell") then
         for _,action in ipairs(self.actions) do
@@ -1051,7 +1088,9 @@ function Game:_choose(index)
         elseif meta.kind=="combat_attack" and self.state.combat then
             local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
             local log=table.concat(self.state.combat.log,"\n")
-            if status=="ongoing" then
+            if status=="blocked" then
+                return {title="Combat event",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image}
+            elseif status=="ongoing" then
                 self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
                 if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
                 for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
@@ -1135,6 +1174,9 @@ function Game:_choose(index)
             local key=self.state.book..":"..self.state.section..":"..action.instruction
             self.state.models.visits[key]=(self.state.models.visits[key] or 0)+1
         end
+        if self.state.execution and #self.state.execution.frames>0 then
+            self.state.execution.frames={}; self.state.combat=nil; self.nested_outer_runner=nil
+        end
         return self:load(a.book or self.state.book,a.section)
     elseif action.kind=="return" then
         local destination=table.remove(self.state.history)
@@ -1213,6 +1255,9 @@ function Game:_choose(index)
     elseif action.kind=="combat_attack" then
         local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
         local combat=self.state.combat; local log=table.concat(combat.log,"\n")
+        if status=="blocked" then
+            return {title="Combat event",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image}
+        end
         if status=="ongoing" then
             self.actions={}; self:add_action("Attack","combat_attack",action.data)
             if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",action.data) end
@@ -1225,6 +1270,23 @@ function Game:_choose(index)
         local death_result=self:route_death(); if death_result then return death_result end
         self.text[#self.text+1]="\n\n"..log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated.")
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_continue" then
+        self.actions={}
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame and frame.kind=="combat_hook" and frame.completed then table.remove(self.state.execution.frames) end
+        local status=Combat.continue(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
+        local combat=self.state.combat; local log=table.concat(combat.log,"\n")
+        if status=="blocked" then return {title="Combat event",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image} end
+        if status=="ongoing" then
+            self:add_action("Attack","combat_attack",{instruction=combat.owner})
+            if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=combat.owner}) end
+            for _,choice in ipairs(self.flee_choices[combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr}) end
+            return {title="Combat",text=log,actions=self.actions,image=self.image}
+        end
+        if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        self.state.combat=nil; self:resume_section()
+        local death_result=self:route_death(); if death_result then return death_result end
+        return {title="Combat result",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image}
     elseif action.kind=="combat_skip" then
         local combat=self.state.combat
         if not combat or not Combat.stalemate(self) then return nil,"Combat is not stalemated." end

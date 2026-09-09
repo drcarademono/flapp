@@ -29,25 +29,34 @@ function Combat.current(state) return state.combat and state.combat.opponents[st
 
 local function damage(roll,defence) return math.max(0,roll-defence) end
 
-function Combat.enemy_turn(game,enemy,hook)
+local function apply_enemy_loss(game,enemy,loss,replaced)
+    if replaced then return end
+    if enemy.abilitydamaged and enemy.abilitydamaged:lower()~="stamina" then
+        local name=enemy.abilitydamaged:gsub("^%l",string.upper)
+        game.state.abilities[name]=math.max(0,(game.state.abilities[name] or 0)-loss)
+    else game.state.stamina=math.max(0,game.state.stamina-loss) end
+end
+
+function Combat.enemy_turn(game,enemy,hook,start_attack)
     local inventory=require("core/inventory"); local defence_blessing=inventory.has_blessing(game.state,"defen")
     local defence=enemy.playerdefence and game:value(enemy.playerdefence) or game:ability("Defence")
     if tostring(enemy.modifiers or ""):lower():find("noarmour",1,true) then
         for _,item in ipairs(game.state.items) do if item.equipped and item.kind=="armour" then defence=defence-(tonumber(item.bonus) or 0) end end
     end
-    for attack=1,enemy.attacks do
+    for attack=start_attack or 1,enemy.attacks do
         if game.state.stamina<=0 then break end
         local roll=game:roll(6)+game:roll(6)+enemy.combat; local loss=damage(roll,defence)
         if defence_blessing then inventory.consume_blessing(game.state,"defen"); defence_blessing=false end
         if loss>0 then
             if inventory.consume_blessing(game.state,"injury") then loss=0 end
-            local replaced=hook and hook("damage",enemy.path,loss)
-            if replaced then
-                -- The hook owns the damage mutation.
-            elseif enemy.abilitydamaged and enemy.abilitydamaged:lower()~="stamina" then
-                local name=enemy.abilitydamaged:gsub("^%l",string.upper)
-                game.state.abilities[name]=math.max(0,(game.state.abilities[name] or 0)-loss)
-            else game.state.stamina=math.max(0,game.state.stamina-loss) end
+            local blocked,replaced
+            if hook then blocked,replaced=hook("damage",enemy.path,loss) end
+            if blocked then
+                game.state.combat.phase="damage_hook"
+                game.state.combat.pending_damage={enemy=enemy.path,loss=loss,replaced=replaced,next_attack=attack+1,roll=roll,defence=defence}
+                return true
+            end
+            apply_enemy_loss(game,enemy,loss,replaced)
         end
         game.state.combat.log[#game.state.combat.log+1]=string.format("%s rolls %d against Defence %d: %s.",enemy.name,roll,defence,loss>0 and loss.." damage" or "miss")
     end
@@ -70,7 +79,7 @@ function Combat.attack(game,hook)
     end
     if not enemy then return "won" end
     combat.round=combat.round+1
-    if not enemy.opened and not enemy.playerfirst then Combat.enemy_turn(game,enemy,hook) end
+    if not enemy.opened and not enemy.playerfirst and Combat.enemy_turn(game,enemy,hook) then enemy.opened=true; return "blocked" end
     enemy.opened=true
     if game.state.stamina<=0 then return "lost" end
     local roll=game:ability("Combat"); for _=1,enemy.attackdice do roll=roll+game:roll(6) end
@@ -84,8 +93,26 @@ function Combat.attack(game,hook)
         if not Combat.current(game.state) then return "won" end
         return "ongoing"
     end
-    if hook then hook("round",enemy.path,combat.round) end
-    Combat.enemy_turn(game,enemy,hook)
+    if hook then
+        local blocked=hook("round",enemy.path,combat.round)
+        if blocked then combat.phase="round_hook"; return "blocked" end
+    end
+    if Combat.enemy_turn(game,enemy,hook) then return "blocked" end
+    return game.state.stamina<=0 and "lost" or "ongoing"
+end
+
+function Combat.continue(game,hook)
+    local combat=game.state.combat; local enemy=Combat.current(game.state)
+    if not combat or not enemy then return "won" end
+    if combat.phase=="round_hook" then
+        combat.phase=nil
+        if Combat.enemy_turn(game,enemy,hook) then return "blocked" end
+    elseif combat.phase=="damage_hook" then
+        local pending=combat.pending_damage; combat.pending_damage=nil; combat.phase=nil
+        apply_enemy_loss(game,enemy,pending.loss,pending.replaced)
+        combat.log[#combat.log+1]=string.format("%s rolls %d against Defence %d: %s.",enemy.name,pending.roll,pending.defence,pending.loss>0 and pending.loss.." damage" or "miss")
+        if Combat.enemy_turn(game,enemy,hook,pending.next_attack) then return "blocked" end
+    end
     return game.state.stamina<=0 and "lost" or "ongoing"
 end
 

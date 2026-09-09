@@ -63,7 +63,7 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("self.section_runner=coroutine.create", game)
         self.assertIn("self:resume_section()", game)
         self.assertIn("self:pause_section()", game)
-        self.assertIn("running==self.section_runner", game)
+        self.assertIn("running==(self.active_runner or self.section_runner)", game)
         self.assertNotIn("local running,is_main=coroutine.running()", game)
         self.assertNotIn("game:value(a.damage or 1)", combat)
 
@@ -420,6 +420,19 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('math.floor((value+divisor-1)/divisor)', inventory)
         self.assertIn('if rng.cursor<#rng.draws then', journal)
         self.assertIn('if load_error then', main)
+
+    def test_serializable_blocking_combat_hook_continuation(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        combat = (PLUGIN / "core" / "combat.lua").read_text()
+        state = (PLUGIN / "core" / "state.lua").read_text()
+        self.assertIn('execution={frames={}}', state)
+        self.assertIn("function Game:start_combat_hook", game)
+        self.assertIn('kind="combat_hook"', game)
+        self.assertIn('frame.hook_path', game)
+        self.assertIn('action.kind=="combat_continue"', game)
+        self.assertIn('function Combat.continue', combat)
+        self.assertIn('combat.phase="round_hook"', combat)
+        self.assertIn('combat.phase="damage_hook"', combat)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

@@ -61,27 +61,27 @@ blessing, selecting a ship, or resuming a blocked executable.
 
 ## 3. Confirmed cross-cutting defects
 
-### 3.1 Nested blocking execution is not implemented — **critical**
+### 3.1 Nested blocking execution — **Partial; combat hooks implemented**
 
 Java's `ExecutableRunner` and nested `ExecutableGrouper` objects allow a group,
 while-loop, fight hook, use effect, transaction event, or result branch to stop
 at an inner action and later resume at the exact child.
 
-Lua can yield only when `Game:pause_section` is called by `section_runner`.
-However, several nested programs are invoked from `Game:_choose`, outside that
-coroutine:
+Lua now persists an execution-frame stack and runs combat-hook programs in a
+dedicated resumable coroutine. Round and damage hooks record their combat phase,
+pending damage, owner path, and next enemy attack, and reload reconstructs the
+hook before combat continues. Other nested programs are still invoked from
+`Game:_choose` without an equivalent frame:
 
 - optional `group` children;
-- combat `fightround`, `fightdamage`, and enemy-flee hooks;
 - market `sold`/bought programs;
 - some outcome/check children; and
 - embedded effect programs.
 
-An inner difficulty check, goto, fight, market, loss choice, or other blocker
-therefore cannot suspend its parent correctly. It may add actions which the
-caller subsequently overwrites, or execution may continue past it. Saved state
-has no nested continuation stack. This is a reachable defect: book 5 section
-689 has a `fightround` containing a difficulty check and failure destination.
+Combat hooks can now suspend for an inner difficulty check or destination and
+resume through a `combat_continue` action; leaving through a hook destination
+terminates the combat frame. The same guarantee is not yet available to groups,
+trade events, outcomes, or embedded use effects.
 
 **Required plan:** replace the single coroutine/path reconstruction hybrid with
 a serializable frame stack. Each frame needs owner path, child index, local
@@ -427,9 +427,9 @@ choice, availability, navigation, save, or rules consequence.
 | `MarketNode` | `market` | **Partial** | Live entry state, exact nonblocking outer execution, transaction availability. |
 | `TradeNode`, `BuyNode`, `SellNode` | `trade`, `buy`, `sell` | **Partial — high** | Quantity, conditional price, flags, tags, replacement, effects, all fleet cases. |
 | `TradeEventNode` | `sold`/Java `bought` | **Partial** | Blocking child programs cannot preserve parent transaction continuation. |
-| `FightNode` and action cells | `fight` | **Partial — critical** | Cache/modifiers/blessings, exact skip states, death, owned undo, hooks. |
-| `FightNode.RoundNode` | `fightround` | **Partial — critical** | Blocking hook programs cannot suspend/resume; pre/round state incomplete. |
-| `FightNode.DamageNode` | `fightdamage` | **Partial — critical** | Blocking/replacement program ownership and undo incomplete. |
+| `FightNode` and action cells | `fight` | **Partial — high** | Cache/modifiers/blessings, exact skip states, death, and owned undo remain. |
+| `FightNode.RoundNode` | `fightround` | **Partial** | Blocking programs now suspend/resume through a serialized frame; exact pre/round ordering still needs behavioral oracle coverage. |
+| `FightNode.DamageNode` | `fightdamage` | **Partial** | Blocking/replacement phases now serialize; complete Java-owned undo still differs. |
 | `FightNode.FleeNode` | `flee` | **Partial** | Full enemy/player flee program and nested continuation semantics. |
 | `CurseNode` | `curse`, `disease`, `poison` | **Partial — high** | Immunity, lifting choice, items/effects, cumulative rules, continuation. |
 | `ResurrectionNode` | `resurrection` | **Partial — high** | Eligibility, supplemental/replacement, payment, death lifecycle, choice. |
@@ -515,8 +515,10 @@ all game logic. Use this second-pass list for remaining parity work.
 
 - [ ] Build a serializable executable frame stack for every nested container and
   replace out-of-coroutine `walk` calls.
-- [ ] Implement blocking combat hooks first and add book 5/689 as an end-to-end
-  save/reload fixture.
+- [x] Implement serialized blocking round/damage combat hooks, pending-damage
+  phases, reload reconstruction, and explicit combat continuation.
+- [ ] Add book 5/689 as an executable end-to-end save/reload fixture once the Lua
+  behavioral harness is available.
 - [ ] Complete centralized death/resurrection routing. A fallback now offers an
   arranged resurrection or the active book's configured death section when no
   authored action remains, but the integrated lifecycle is still incomplete.

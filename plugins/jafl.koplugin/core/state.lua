@@ -18,7 +18,7 @@ function State.new()
         abilities = {}, stamina = 0, max_stamina = 0, rank = 1, defence = 0, shards = 0,
         ticks = 0, items = {}, codewords = {}, flags = {}, titles = {}, gods = {},
         blessings = {}, curses = {}, diseases = {}, poisons = {}, ships = {}, caches = {}, variables = {}, history = {},
-        pending = nil, progress=nil, combat=nil, rng={draws={},cursor=0}, undo={}, models=empty_models(), hardcore = false,
+        pending = nil, progress=nil, combat=nil, execution={frames={}}, rng={draws={},cursor=0}, undo={}, models=empty_models(), hardcore = false,
     }
 end
 
@@ -98,6 +98,7 @@ function State.validate(s)
     s.diseases=s.diseases or {}; s.poisons=s.poisons or {}; s.caches=s.caches or {}; s.history=s.history or {}
     s.models=s.models or empty_models(); s.rng=s.rng or {draws={},cursor=0}
     s.undo=s.undo or {}
+    s.execution=s.execution or {frames={}}; s.execution.frames=s.execution.frames or {}
     s.models.stats=s.models.stats or {natural={},modifiers={},derived={}}
     s.models.equipment=s.models.equipment or {weapon=nil,armour=nil,tools={}}
     s.models.afflictions=s.models.afflictions or {blessings={},curses={},diseases={},poisons={}}
