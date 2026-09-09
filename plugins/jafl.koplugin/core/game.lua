@@ -227,7 +227,25 @@ function Game:mutate(name, a, direction)
         s.shards=0
     end
     if direction<0 and (a.item=="*" or a.weapon=="*" or a.armour=="*" or a.tool=="*") then
-        State.remove_matching_items(s,a)
+        if a.chance then
+            local numerator,denominator=tostring(a.chance):match("^(%d+)%s*/%s*(%d+)$")
+            numerator,denominator=tonumber(numerator),tonumber(denominator)
+            if numerator and denominator and denominator>0 then
+                for index=#s.items,1,-1 do
+                    local item=s.items[index]
+                    if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then
+                        local lost=0
+                        for _=1,item.quantity or 1 do if self:roll(denominator)<=numerator then lost=lost+1 end end
+                        if lost>0 then Inventory.remove_by_id(s,item.id,lost) end
+                    end
+                end
+            end
+        else
+            for index=#s.items,1,-1 do
+                local item=s.items[index]
+                if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then Inventory.remove_by_id(s,item.id,item.quantity) end
+            end
+        end
     end
     if a.addtag or a.removetag or a.addbonus then
         for _,item in ipairs(s.items) do if Inventory.matches(item,a) then

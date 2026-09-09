@@ -98,6 +98,8 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('special=="difficultycurse"', source)
         self.assertIn('special=="armourlock"', source)
         self.assertIn('cache.rules.frozen=', source)
+        self.assertIn('self:roll(denominator)<=numerator', source)
+        self.assertIn('not Inventory.tags(item.tags).keep', source)
 
     def test_destinations_match_java_alive_and_dead_states(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()

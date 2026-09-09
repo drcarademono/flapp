@@ -30,6 +30,24 @@ function Inventory.count(state,wanted)
     return count
 end
 
+function Inventory.matching_indices(state,wanted,allow_kept)
+    local out={}
+    for index,item in ipairs(state.items) do
+        if Inventory.matches(item,wanted) and (allow_kept or not Inventory.tags(item.tags).keep) then out[#out+1]=index end
+    end
+    return out
+end
+
+function Inventory.remove_by_id(state,id,quantity)
+    quantity=tonumber(quantity) or 1
+    for index,item in ipairs(state.items) do if item.id==id then
+        local take=math.min(item.quantity or 1,quantity); item.quantity=(item.quantity or 1)-take
+        if item.quantity<=0 then Inventory.unequip(state,item); table.remove(state.items,index) end
+        return take
+    end end
+    return 0
+end
+
 function Inventory.equip(state,item)
     if item.kind=="weapon" or item.kind=="armour" then
         local slot=item.kind

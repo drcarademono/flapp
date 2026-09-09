@@ -156,6 +156,9 @@ local function adventurer_stat_rules()
     assert(not game:if_condition{codeword="Missing",shards="999"})
     game:apply_tick_count({}); equal(state.models.section_ticks["1:test"],1,"section tick count")
     game:mutate("tick",{name="merit",amount="2"},1); equal(state.codewords.merit,2,"numeric codeword")
+    state.items={State.new_item{id="kept",name="heirloom",tags={keep=true}},State.new_item{id="loose",name="rope"}}
+    game:mutate("lose",{item="*"},-1); equal(#state.items,1,"keep tag survives wildcard loss")
+    equal(state.items[1].id,"kept","kept item identity")
 end
 
 effects_and_afflictions()
