@@ -246,6 +246,7 @@ function Game:pause_section()
     -- not portable across its Lua 5.1/5.2 compatibility configurations.  The
     -- runner identity is unambiguous and works in every supported build.
     if running and running==(self.active_runner or self.section_runner) then
+        self.pause_serial=(self.pause_serial or 0)+1
         local node=self.blocking_node or self.current_node
         local frames=self.state.execution and self.state.execution.frames
         if frames and frames[#frames] then frames[#frames].instruction=node and node._path or nil end
@@ -324,7 +325,15 @@ function Game:start_combat_hook(hook,kind,path,replacement,reuse_frame)
     if not reuse_frame then self.state.execution.frames[#self.state.execution.frames+1]=frame end
     self.nested_outer_runner=self.active_runner or self.section_runner
     self.actions={}
-    local runner=coroutine.create(function() for _,child in ipairs(hook.children or {}) do self:walk(child,true) end end)
+    local runner=coroutine.create(function()
+        for _,child in ipairs(hook.children or {}) do
+            local action_count,pause_serial=#self.actions,self.pause_serial or 0
+            self:walk(child,true)
+            -- A blocker directly owned by a hook has no enclosing SectionNode
+            -- to perform the deferred pause used by ordinary section prose.
+            if #self.actions>action_count and (self.pause_serial or 0)==pause_serial then self:pause_section() end
+        end
+    end)
     self.active_runner=runner
     local ok,error_message=coroutine.resume(runner); if not ok then error(error_message) end
     if coroutine.status(runner)=="dead" then

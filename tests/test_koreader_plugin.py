@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import unittest
 import zipfile
@@ -433,6 +434,12 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('function Combat.continue', combat)
         self.assertIn('combat.phase="round_hook"', combat)
         self.assertIn('combat.phase="damage_hook"', combat)
+
+    def test_executable_lua_java_oracle_scenarios(self) -> None:
+        interpreter = next((name for name in ("lua5.1", "luajit", "lua5.4", "lua5.3", "lua") if shutil.which(name)), None)
+        if interpreter is None:
+            self.skipTest("Lua interpreter is not installed")
+        subprocess.run(["sh", "tools/run-koreader-lua-tests.sh"], cwd=ROOT, check=True)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

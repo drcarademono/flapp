@@ -122,8 +122,9 @@ handler containing only a message and `return` satisfies the dispatch test.
 
 The current 4,405-section result also does not mean 4,405 sections are playable;
 it means their files are connected by a syntactic destination graph. The test
-suite does not currently execute Lua and therefore cannot validate state
-transitions, continuation ordering, saves, or exact Java-derived outcomes.
+suite now includes an executable Lua harness for forced-random and blocking
+combat-hook save/reload scenarios. Coverage is not yet broad enough to validate
+all state transitions, continuation ordering, saves, or Java-derived outcomes.
 
 **Required plan:** retain the structural gate, but add a Lua test harness and
 table-driven Java-oracle scenarios with deterministic dice. Add authored
@@ -526,8 +527,9 @@ all game logic. Use this second-pass list for remaining parity work.
 
 ### P1 — behavioral test foundation
 
-- [ ] Run Lua engine tests, not source-text assertions.
-- [ ] Port deterministic Java-oracle fixtures for every executable node and
+- [x] Add a Lua 5.1-compatible executable harness and Java-derived forced-random
+  and blocking combat-hook save/reload scenarios.
+- [ ] Port deterministic Java-oracle fixtures for every remaining executable node and
   compare state, text-independent action identity, and continuation position.
 - [ ] Add save/reload and undo/reroll checkpoints to every blocking scenario.
 - [ ] Extend compatibility declarations from “observed” to “consumed by this
