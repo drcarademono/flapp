@@ -540,7 +540,11 @@ function Game:walk(node, enabled)
         self:add_action(label,"random",node)
         self:preview_after(node); self:pause_section(); return
     elseif n=="success" or n=="failure" then
-        local result=self.state.variables[a.var or "*difficulty*"] or 0
+        local result=self.state.variables[a.var or "*difficulty*"]
+        if result==nil then
+            self:attach_check_branch(node)
+            return
+        end
         if (n=="success")~=(result>0) then return end
         if a.section then
             local fallback=(n=="success" and "Successful roll" or "Failed roll")
@@ -714,6 +718,7 @@ function Game:load(book, section)
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.preview_text=nil; self.actions={}; self.steps=0; self.image=nil
     self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
+    self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)
@@ -759,8 +764,21 @@ function Game:choose(index)
             for _,candidate in ipairs(self.actions) do
                 if (candidate.data.group or candidate.data)~=group then remaining[#remaining+1]=candidate end
             end
+            self.actions=remaining
+            for _,branch in ipairs(group.branches or {}) do
+                local matched=branch.name=="success" and result>0 or branch.name=="failure" and result<=0
+                if matched then
+                    if branch.attr.section then
+                        local fallback=branch.name=="success" and "Successful roll" or "Failed roll"
+                        self:add_action(plain(branch)~="" and plain(branch) or fallback,"goto",branch.attr)
+                    else
+                        for _,child in ipairs(branch.children or {}) do self:walk(child,true) end
+                    end
+                    break
+                end
+            end
         end
-        self.actions=remaining
+        if truth(a.force,true) then self.actions=remaining end
         if truth(a.force,true) then self:resume_section() end
         self.text[#self.text+1]="\n\n"..description
         return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}

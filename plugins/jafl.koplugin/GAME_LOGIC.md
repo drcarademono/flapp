@@ -223,6 +223,14 @@ together, followed by a separate blank-line-delimited result. In book 2, section
 423, “Training roll: N.” appears after the sentence ending “turn to 97.” rather
 than between “Roll one die” and the comma that follows it.
 
+Optional checks register adjacent `success` and `failure` nodes as dormant
+branches instead of treating an absent result as failure. The branch descriptions
+are not concatenated into section prose and their destinations are not offered
+until the roll exists. After rolling, the matching branch becomes an action while
+the unrelated ordinary choices remain available. Section-local random and
+difficulty result slots are cleared whenever a new section loads, preventing a
+previous page's roll from activating a new page's branch.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

@@ -258,6 +258,19 @@ class KOReaderPluginTests(unittest.TestCase):
         fight = source[source.index('elseif action.kind=="fight"'):source.index('elseif action.kind=="market"')]
         self.assertLess(fight.index("self:resume_section()"), fight.index("self.text[#self.text+1]=combat_result"))
 
+    def test_optional_check_results_do_not_leak_into_prose(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        branch = source[source.index('elseif n=="success" or n=="failure"'):source.index('elseif n=="outcomes"')]
+        self.assertIn("if result==nil then", branch)
+        self.assertIn("self:attach_check_branch(node)", branch)
+        self.assertNotIn('or 0', branch)
+        self.assertIn('self.state.variables["*difficulty*"]=nil', source)
+        choose = source[source.index('elseif action.kind=="skillcheck"'):source.index('elseif action.kind=="random"')]
+        self.assertIn('for _,branch in ipairs(group.branches or {}) do', choose)
+        section = (ROOT / "book2" / "190.xml").read_text()
+        self.assertIn('<difficulty ability="scouting" level="12" force="f">', section)
+        self.assertIn('<failure section="213">Failed attempt to swim</failure>', section)
+
     def test_text_parsing_audit_tracks_platform_only_differences(self) -> None:
         audit = (PLUGIN / "TEXT_PARSING_AUDIT.md").read_text()
         self.assertIn("Java-compatible plain-text semantics now implemented", audit)

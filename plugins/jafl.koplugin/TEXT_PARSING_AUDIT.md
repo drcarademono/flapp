@@ -30,6 +30,8 @@ the Lua execution coroutine. The buffer is discarded before continuation, so
 the same nodes are subsequently executed—not duplicated—as authored.
 Generated roll and combat summaries are appended after that continuation has
 been rendered, keeping diagnostics out of the middle of authored sentences.
+Success and failure descriptions attached to optional checks remain dormant UI
+labels until the check is made; they are not flattened into the main prose.
 
 The remaining differences are primarily platform presentation differences:
 
