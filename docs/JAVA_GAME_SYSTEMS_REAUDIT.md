@@ -5,7 +5,7 @@
 - **Port checked:** `plugins/jafl.koplugin/` at commit `b77cabc`
 - **Purpose:** independently challenge the earlier parity claims after Phases 0–6
 
-## 1. Executive conclusion
+## 1. Executive conclusion and feature-parity verdict
 
 The KOReader plugin does **not** yet implement all Java game systems. It now has
 useful foundations for most major domains, but the second pass confirms that
@@ -17,6 +17,13 @@ The most important conclusion is therefore:
 
 > Passing the compatibility and reachability scripts is not evidence of full
 > playability or Java parity.
+
+**Feature-parity verdict: NO.** This verdict covers the entire Java gameplay
+runtime, not only Phase 6 and not only the 69 book-content tags. The ledger in
+section 5 accounts for the Java execution framework, every node family created
+by `Node.createChild`, character collections and effects, ships, undo/RNG,
+persistence, and rules-relevant UI facilities. Pure Swing painting and window
+geometry are explicitly listed as non-gameplay rather than silently omitted.
 
 The compatibility generator records observed names and attributes. It does not
 prove that a handler consumes each declared attribute. The reachability script
@@ -372,7 +379,139 @@ images, action pagination, a basic character sheet, and a basic ship listing.
 - `sectionview` is intentionally excluded, so strict Java feature parity is not
   achieved even though the difference is documented.
 
-## 5. Revised implementation checklist
+## 5. Exhaustive Java gameplay coverage ledger
+
+This section is the completeness cross-check. **Partial** means that at least
+one Java behavior is absent or materially different, even when a Lua module or
+tag handler exists. “N/A presentation” is reserved for code with no game-state,
+choice, availability, navigation, save, or rules consequence.
+
+### 5.1 Execution, parsing, navigation, and persistence classes
+
+| Java source of truth | Responsibility | KOReader status | Remaining parity gap |
+| --- | --- | --- | --- |
+| `Node`, `ParserHandler`, `DynamicSectionLoader` | Build typed node tree and resolve models | **Partial** | Lua parses a generic tree; type-specific validation and ownership are deferred to one large dispatcher. |
+| `Executable`, `ExecutableGrouper`, `ExecutableRunner` | Ordered, nested, resumable execution | **Partial — critical** | No serializable nested frame stack; only the section coroutine can truly suspend. |
+| `ActionNode`, `Flag` | Live action availability and flag listeners | **Partial** | Actions are snapshots and do not generally re-enable/disable from state listeners. |
+| `GroupNode`, `IfNode`, `WhileNode` | Compound actions and nested control flow | **Partial — critical** | Nested blockers, child index, loop state, undo, and reload are not equivalent. |
+| `Address`, `Books`, `GotoNode`, `ReturnNode` | Addresses, book metadata, travel, visit, return | **Partial** | Payment, flags, history/revisit, dock/sail side effects, and saved execution state differ. |
+| `SectionNode`, `LoadableSection`, `XMLPool` | Section lifecycle, loading, saved executable properties | **Partial** | Lua reconstructs from paths and applied/completed sets rather than restoring node execution properties. |
+| `Loadable`, `LoadableHandler`, `LoadableNode`, `XMLOutput` | Java XML save/load protocol | **Missing by format** | Lua has its own schema; Java save import/export and equivalent rehydration do not exist. |
+| `UndoManager`, `Roller`, `DiceExpression`, `Expression` | Roll ownership, undo chain, dice, arithmetic | **Partial — high** | Snapshot undo is not Java's owned chain; saved RNG is not replayed; some resolver semantics differ. |
+| `ActiveRuleset` | Fixed and per-book rules | **Partial** | Storage/lookup exists, but selection UI and rule-specific effects such as exact Defence behavior are incomplete. |
+
+### 5.2 Complete executable/content-node ledger
+
+| Java node class | XML element(s) | KOReader status | Missing or different behavior |
+| --- | --- | --- | --- |
+| `ChoiceNode` | `choice` | **Partial** | Full conditions, payment, listener-driven availability, and revisit behavior. |
+| `GotoNode` | `goto` | **Partial** | Flags/codewords/emptyvar, full prices, visit/revisit lifecycle, dock/sail, continuation. |
+| `ReturnNode` | `return` | **Partial** | Exact eligible-history semantics and nested continuation. |
+| `IfNode` | `if`, `elseif`, `else` | **Partial** | Attribute completeness, listener updates, nested blocker/reload behavior. |
+| `GroupNode` | `group` | **Partial — critical** | Inner blockers and saved current-child/undo state. |
+| `WhileNode` | `while` | **Partial — critical** | General runner semantics and serializable inner continuation. |
+| `SetVarNode` | `set` | **Partial** | Modifier/cache/item/dock expressions and optional execution variants. |
+| `AdjustNode` | `adjust` | **Partial** | Title values/defaults, models, thresholds, modifiers, ship/crew/item variants. |
+| `TickNode` | `tick`, `gain` | **Partial** | Prices, choices, titles, effects, tags, bonuses, caches, fleet forms, linked undo. |
+| `LoseNode` | `lose` | **Partial — high** | Selection, chance, fatal/injury, itemat, caches, blessing/resurrection, fleet forms. |
+| `PriceNode` | `price` | **Partial** | Full live enablement, grouped payment, rollback, currency/item forms, continuation. |
+| `RestNode` | `rest` | **Partial** | Dice/multi-use variants, exact listener behavior, and roll-linked undo. |
+| `RandomNode` | `random` | **Partial** | Full flag/effect/undo/reload semantics and deterministic replay. |
+| `DifficultyNode` | `difficulty` | **Partial** | Ability-purpose effects, potion use, failed-roll blessing choice, exact undo/reload. |
+| `RankCheckNode` | `rankcheck` | **Partial** | Owned reroll/continuation and executable reload verification. |
+| `TrainingNode` | `training` | **Partial** | Natural-stat semantics, exact undo/reload, effects, and all continuation cases. |
+| `RerollNode` | `reroll` | **Partial — high** | Does not reinvoke the complete original Roller plus owned mutation chain. |
+| `OutcomeNode`, `OutcomesTableNode` | `outcome`, `outcomes` | **Partial** | Complete flags/branches and nested blocking continuation. |
+| `DifficultyResultNode` | `success`, `failure` | **Partial** | Exact owner association and nested continuation across reload. |
+| `ItemNode`, `ItemGroupNode` | `item`, `weapon`, `armour`, `tool`, `items` | **Partial — high** | Kind preservation, replace, quantity, flags, selection, groups, effects, tags. |
+| `EffectNode` | `effect` | **Partial** | Full chains, ordering, cumulative behavior, purposes, embedded use programs. |
+| `ItemFilterNode` | `include`, `exclude` | **Partial** | Not applied consistently to every item loss/transfer/trade context. |
+| `CacheNode` | `itemcache`, `moneycache` | **Partial** | Freeze/lifecycle, unnamed caches, exact availability, saved blocking selection. |
+| `CacheNode.AdjustMoneyNode` | `adjustmoney` | **Partial** | Exact target/group/undo/continuation behavior. |
+| `TransferNode` | `transfer` | **Partial — high** | Filters, endpoints, limit, price, forced/optional selection, continuation. |
+| `MarketNode` | `market` | **Partial** | Live entry state, exact nonblocking outer execution, transaction availability. |
+| `TradeNode`, `BuyNode`, `SellNode` | `trade`, `buy`, `sell` | **Partial — high** | Quantity, conditional price, flags, tags, replacement, effects, all fleet cases. |
+| `TradeEventNode` | `sold`/Java `bought` | **Partial** | Blocking child programs cannot preserve parent transaction continuation. |
+| `FightNode` and action cells | `fight` | **Partial — critical** | Cache/modifiers/blessings, exact skip states, death, owned undo, hooks. |
+| `FightNode.RoundNode` | `fightround` | **Partial — critical** | Blocking hook programs cannot suspend/resume; pre/round state incomplete. |
+| `FightNode.DamageNode` | `fightdamage` | **Partial — critical** | Blocking/replacement program ownership and undo incomplete. |
+| `FightNode.FleeNode` | `flee` | **Partial** | Full enemy/player flee program and nested continuation semantics. |
+| `CurseNode` | `curse`, `disease`, `poison` | **Partial — high** | Immunity, lifting choice, items/effects, cumulative rules, continuation. |
+| `ResurrectionNode` | `resurrection` | **Partial — high** | Eligibility, supplemental/replacement, payment, death lifecycle, choice. |
+| `ExtraChoice` | `extrachoice` | **Partial** | Visible blocking acquisition, styled text, full activation lifecycle. |
+| `ImageNode` | `image` | **Implemented / platform-adapted** | KOReader embeds/views the image instead of opening the Java window. |
+| `FieldNode` | `field` | **Implemented / platform-adapted** | Inline read-only value replaces Swing's read-only field. |
+| `SectionViewNode` | `sectionview` | **Not implemented by decision** | Java sequential/random section browser is excluded from player runtime. |
+| `ParagraphNode`, `HeadingNode`, `TextNode`, `TableNode`, `RowNode`, `StyleNode`, `BoxNode` | presentation tags | **Partial presentation** | Simplified layout can still matter where style indicates action state; covered by text audit. |
+
+The factory also knows Java save-only or legacy elements not present in the
+books 1–6 content census (for example `saved`, `curses`, style `caps`/`u`, and
+Java's `bought` transaction form). They are not evidence of current reachable
+book failure, but strict engine/file-format parity would require a deliberate
+support or exclusion decision.
+
+### 5.3 Character, collection, effect, economy, and combat models
+
+| Java model | KOReader status | Remaining parity gap |
+| --- | --- | --- |
+| `Adventurer` | **Partial — high** | Natural/affected/current stats, derived Defence, caps, purposes, death/hardcore, complete save state. |
+| `Codewords`, `Flag`, `Title` | **Partial** | Numeric codeword values/listeners, transient flags, patterned/value titles, full serialization. |
+| `Item`, `ItemList`, `ItemGroupNode`, `IndexSet` | **Partial — high** | Selection, grouping, identity/quantity, equipped/kept state, filters, listeners, replacement. |
+| `Effect`, `AbilityEffect`, `EffectSet`, `UseEffect` | **Partial — high** | Ordering, ceil division, chains, cumulative multipliers, use programs, potion purpose/consumption. |
+| `Blessing`, `BlessingList` | **Partial — high** | Ability/luck/storm/travel/wrath/immunity types, prompt/consumption/permanence. |
+| `Curse`, `CurseList` | **Partial — high** | Typed/cumulative instances, attached items/effects, prevention and interactive lifting. |
+| `Resurrection` | **Partial — high** | Full eligibility, supplemental/replacement state, integrated death handling. |
+| `Ship`, `ShipList` | **Partial — high** | Exact cargo units, multi-ship operations, listeners, loss/swap/selection, complete serialization. |
+| Money and named caches | **Partial** | Exact cache identity/lifecycle/freeze, interactive transfer and all adjustment semantics. |
+| Extra-choice collection | **Partial** | Acquisition interaction, styled label persistence, exact activation/removal lifecycle. |
+
+### 5.4 Rules-relevant application and UI facilities
+
+| Java facility | Gameplay relevance | KOReader status |
+| --- | --- | --- |
+| `FLApp` navigation/death/rules orchestration | Chooses active book/section, temporary rules, death and save lifecycle | **Partial — high** |
+| `AdventurerFrame` | Selects equipment and exposes complete mutable character state | **Partial** via minimal sheet/actions |
+| `ShipFrame`, `ShipSwapDialog` | Multi-ship inspection, active selection, transfer/swap | **Partial / swap missing** |
+| `MoneyChooser`, `DocumentChooser` | Rules-relevant money/item/ability selection | **Partial** through action buttons; many call sites missing |
+| `SectionBrowser`, `SectionViewNode` | Random/sequential preview | **Excluded by documented decision** |
+| `CodewordWindow` | Inspect codeword state | **Missing UI** |
+| `SavedGamePreview`, start/load flow | Save selection, corruption feedback, preview | **Partial**; single save and silent fallback risk |
+| `ImageWindow` and map facilities | Reference media only | **Implemented / adapted** |
+
+The following classes are presentation infrastructure and were reviewed but do
+not independently define game logic: `AboutDialog`, `AdvancedParagraphView`,
+`BasicDebugPane`, `BookEditorKit`, `BoxView`, `CommandButtons`, `ComponentView`,
+`DocumentCellRenderer`, `FontChooser`, `ImageView`, `RestrictedFileSystemView`,
+`SectionDocument`, `SectionDocumentViewer`, `StartPanel`, `StyledText`,
+`StyledTextList`, `TableView`, `WindowProperties`, and ordinary event/listener
+interfaces. Their visual differences are tracked in `TEXT_PARSING_AUDIT.md` when
+they affect authored text or action presentation.
+
+### 5.5 Feature-parity decision by subsystem
+
+| Subsystem | At Java feature parity? |
+| --- | --- |
+| Parser/declaration boundary | **No** — declared does not mean semantically consumed |
+| Nested execution and continuation | **No** |
+| Character creation | **Mostly for current templates; broader character model no** |
+| Abilities, Rank, Stamina, Defence | **No** |
+| Conditions, expressions, variables | **No** |
+| Navigation, visits, rules, death routes | **No** |
+| Items, equipment, effects, use actions | **No** |
+| Money, prices, caches, transfers | **No** |
+| Ships, crew, cargo | **No** |
+| Markets and trade events | **No** |
+| Gain/loss/tick/rest | **No** |
+| Blessings, gods, afflictions | **No** |
+| Random/checks/training/outcomes/reroll | **No** |
+| Combat | **No** |
+| Resurrection and death lifecycle | **No** |
+| Saves, reload, RNG, undo, hardcore | **No** |
+| Extra choices and rules-relevant sheet/UI | **No** |
+| Images/maps and basic book text | **Yes, with KOReader presentation adaptations** |
+| `sectionview` desktop browser | **No, intentionally excluded** |
+
+## 6. Revised implementation checklist
 
 The earlier phase checklist describes foundation milestones, not completion of
 all game logic. Use this second-pass list for remaining parity work.
@@ -429,7 +568,7 @@ all game logic. Use this second-pass list for remaining parity work.
 - [ ] Re-run this audit and claim full playability only when no reachable
   correctness gaps remain.
 
-## 6. Final assessment
+## 7. Final assessment
 
 The Phase 0–6 work produced a useful architecture and reduced the amount of
 missing infrastructure. It did **not** complete all Java systems. The next work

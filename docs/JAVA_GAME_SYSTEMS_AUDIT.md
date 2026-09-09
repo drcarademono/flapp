@@ -3,7 +3,10 @@
 > **Second-pass status:** This original phase audit is retained as the historical
 > implementation checklist. The independent post-Phase-6 verification in
 > [`JAVA_GAME_SYSTEMS_REAUDIT.md`](JAVA_GAME_SYSTEMS_REAUDIT.md) supersedes its
-> broad completion implications and records the remaining confirmed gaps.
+> broad completion implications and records the remaining confirmed gaps. The
+> re-audit is exhaustive across **all** Java gameplay systems and includes a
+> class/node coverage ledger plus an explicit feature-parity verdict; it is not
+> limited to the Phase-6 work.
 
 - **Audit date:** 2026-09-09
 - **Reference implementation:** the Java sources under `flands/`
