@@ -13,7 +13,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "core/journal.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "core/expression.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -328,6 +328,20 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("function Journal:draw", journal)
         self.assertIn("function Journal:rollback", journal)
         self.assertNotIn("self.random(", game)
+
+    def test_phase_two_generic_rules_foundation(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        expression = (PLUGIN / "core" / "expression.lua").read_text()
+        self.assertIn("function Expression.evaluate", expression)
+        for operator in ('op=="*"', 'op~="+"', 'division by zero'):
+            self.assertIn(operator, expression)
+        self.assertIn('action.kind=="mutate"', game)
+        self.assertIn('action.kind=="rest"', game)
+        self.assertIn('action.kind=="group"', game)
+        self.assertIn('while self.state.variables[a.var]==nil', game)
+        self.assertIn('list[a.key]=State.new_extra_choice(a)', game)
+        self.assertIn('for _,choice in pairs(self.state.models.extra_choices)', game)
+        self.assertIn('local multiplier=self:value(a.multiply or 1)', game)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

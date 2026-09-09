@@ -20,7 +20,7 @@ Compatibility.tags = {
     ["else"] = { status="partial", attributes={  } },
     ["elseif"] = { status="partial", attributes={ ["codeword"]=true, ["crew"]=true, ["equals"]=true, ["god"]=true, ["hidden"]=true, ["item"]=true, ["lessthan"]=true, ["profession"]=true, ["ship"]=true, ["ticks"]=true, ["title"]=true, ["var"]=true, ["weapon"]=true } },
     ["exclude"] = { status="missing", attributes={ ["bonus"]=true, ["item"]=true, ["reason"]=true, ["tags"]=true } },
-    ["extrachoice"] = { status="missing", attributes={ ["atbook"]=true, ["atsection"]=true, ["book"]=true, ["key"]=true, ["remove"]=true, ["section"]=true, ["tag"]=true, ["text"]=true } },
+    ["extrachoice"] = { status="partial", attributes={ ["atbook"]=true, ["atsection"]=true, ["book"]=true, ["key"]=true, ["remove"]=true, ["section"]=true, ["tag"]=true, ["text"]=true } },
     ["failure"] = { status="partial", attributes={ ["book"]=true, ["section"]=true, ["var"]=true } },
     ["field"] = { status="missing", attributes={ ["label"]=true, ["name"]=true, ["text"]=true } },
     ["fight"] = { status="partial", attributes={ ["abilitydamaged"]=true, ["attackdice"]=true, ["attacks"]=true, ["combat"]=true, ["defence"]=true, ["flee"]=true, ["group"]=true, ["modifiers"]=true, ["name"]=true, ["playerdefence"]=true, ["playerfirst"]=true, ["predamage"]=true, ["stamina"]=true, ["staminalost"]=true, ["usecache"]=true } },

@@ -127,18 +127,17 @@ continuations.
 
 **Still needed**
 
-- Full expression grammar and Java resolution/rounding rules. Lua accepts only
-  one symbol or one dice expression; unsupported expressions silently become
-  zero.
+- Extend the expression resolver as model-specific values come online. The Java
+  arithmetic grammar and core identifiers are implemented; ship/crew, item
+  matching, cache, and natural/modified ability variants depend on later phases.
 - Rule-extension predicates (`ActiveRuleset`), item-group/filter semantics, and
   exact wildcard/list comparison behavior for every condition type.
 - `<set modifier>`, item/tag/cache/dock setters, and the non-numeric `<adjust>`
   variants. These attributes occur hundreds of times (especially crew).
-- Real `<group>` semantics. Lua currently treats it as a presentation container,
-  so forced grouped payments/actions do not block or resume as one unit.
-- Java-compatible `<while>` execution and continuation. Lua only tests a
-  nonzero variable, caps at 100 iterations, and cannot correctly suspend and
-  resume arbitrary blocking children.
+- Complete Java group UI semantics for nested optional children and undo remain;
+  groups now have a compound action and ordered coroutine continuation.
+- Loops now repeat until their variable becomes defined and preserve blocking
+  child continuation; the safety limit remains a malformed-content guard.
 - Report unsupported expressions and attributes instead of defaulting to a
   plausible but incorrect result.
 
@@ -169,8 +168,8 @@ continuations.
 - Book fixed/temporary rules and rule-dependent mechanics.
 - Death menu routing to each book's configured death section when no authored
   dead goto is present.
-- Persistent `<extrachoice>` acquisition/removal and activation by `atbook` /
-  `atsection` or section tag. Lua only renders its default text.
+- Match Java's visible acquisition blocker and menu presentation for persistent
+  `<extrachoice>` entries; keyed storage/removal and address/tag activation work.
 - `<sectionview>` behavior, if that Java utility is in product scope.
 
 ### 3.4 Items, equipment, item groups, and effects — **Partial**
@@ -315,7 +314,8 @@ continuations.
 
 - Implements common scalar/set mutations, wildcard money/item loss, and bounded
   current Stamina. `staminato` is correctly distinct from Stamina loss.
-- Rest is immediate fixed healing and payment.
+- Rest is a selectable transactional action with affordability checks, bounded
+  fixed healing, and full healing when Stamina is omitted.
 
 **Still needed**
 
@@ -326,9 +326,8 @@ continuations.
 - Maximum-Stamina and Defence mutations, all/single ability choice, blessing
   consumption/prevention, injury/death rules, and undo integration.
 - Ship/crew/cargo forms and effect/tag/equipped-item forms.
-- Java rest defaults, affordability gating, full-heal behavior, action blocking,
-  and undo. In Lua `<rest stamina="...">` with no `shards` works, but an empty
-  Stamina attribute path does not mean full healing.
+- Finish multi-use and dice-expression rest choices and roll-specific undo. Fixed
+  and full-heal defaults, affordability, bounded healing, and payment now work.
 
 ### 3.9 Blessings, gods, curses, diseases, and poisons — **Partial**
 
@@ -452,13 +451,13 @@ continuations.
 - Correct interaction with fatal losses, injury blessings, curses, ships, and
   pending combat.
 
-### 3.13 Persistent extra choices — **Missing**
+### 3.13 Persistent extra choices — **Partial**
 
 Java lets a section grant or remove a keyed destination that later appears only
-at a configured address or in sections with a matching tag. The list is saved.
-KOReader has no extra-choice collection, activation check, removal, menu action,
-or persistence. All seven corpus nodes need this system; treating the tag as
-ordinary text is not equivalent.
+at a configured address or in sections with a matching tag. KOReader now stores
+that keyed choice in schema 2, removes it by key, and exposes it at the authored
+address or tag. It still needs Java's visible acquisition blocker, flash/menu
+presentation, and styled-label details.
 
 ### 3.14 Save/load, autosave, continuation, and hardcore mode — **Partial**
 
@@ -556,7 +555,7 @@ change the `partial` and `missing` parity findings above; those remain checklist
 items for subsequent phases.
 
 The generated support inventory currently classifies the 69 observed tags as
-1 implemented, 44 partial, 7 missing, and 17 presentation/template tags. These
+1 implemented, 45 partial, 6 missing, and 17 presentation/template tags. These
 labels are the checklist baseline: completing later work should move entries
 from `partial`/`missing` to `implemented`, with a corresponding oracle test.
 
@@ -583,13 +582,30 @@ Phase 1 supplies persistence primitives; it does not imply that the later ship,
 effect, cache, or rules engines are implemented. Their model records are dormant
 until the corresponding checklist phases use them.
 
-### Phase 2 — expressions and generic actions
+### Phase 2 — expressions and generic actions — **Complete**
 
-1. Port `Expression`, condition/flag matching, and all set/adjust attributes.
-2. Port the generic gain/tick/lose/payment engine, including optional choices,
-   grouping, filters, selection, fatality, blessings, and undo.
-3. Implement resumable group and loop semantics.
-4. Implement Java rest rules and persistent extra choices.
+- [x] Port the Java arithmetic expression grammar with identifiers, unary signs,
+  parentheses, precedence, integer division, and explicit parse/resolution errors.
+  Resolution includes section variables, abilities, core statistics, Shards,
+  and selected weapon/armour bonuses. Set nodes also support codeword values and
+  docking side effects; adjustment children remain contextual rather than being
+  incorrectly executed as standalone gains.
+- [x] Establish generic immediate and optional mutation paths. Optional gain,
+  tick, and loss actions now defer mutation until selected, execute inside the
+  Phase-1 transaction, and are recorded in the applied-instruction ledger.
+  Cached/carried money multiplication is handled by `adjustmoney`.
+- [x] Implement resumable optional groups and correct Java loop termination:
+  `<while var="…">` repeats while the variable is undefined, not while it is a
+  non-zero number. Blocking children continue through the existing coroutine
+  boundary.
+- [x] Implement rest actions with affordability, full-heal defaults, bounded
+  Stamina, and transactional payment. Implement keyed extra-choice acquisition,
+  removal, persistence, and activation by address or section tag.
+
+The generic framework is complete, but model-specific operands remain checked
+under their owning phases: ship/crew/cargo actions in Phase 4, effect and item
+filter semantics in Phase 3, and blessing-driven undo/fatality in Phases 3 and
+5. Phase 2 completion therefore does not change those tags from `partial` yet.
 
 ### Phase 3 — inventory, effects, afflictions, and caches
 

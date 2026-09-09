@@ -17,7 +17,7 @@ PRESENTATION = {
     "gold", "h1", "h2", "h3", "h4", "header", "i", "items", "p", "profession",
     "rank", "section", "stamina", "starting", "table", "td", "text", "tr",
 }
-MISSING = {"exclude", "extrachoice", "field", "include", "price", "sectionview", "sold"}
+MISSING = {"exclude", "field", "include", "price", "sectionview", "sold"}
 IMPLEMENTED = {"image"}
 
 
