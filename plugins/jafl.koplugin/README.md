@@ -16,10 +16,11 @@ Extract `dist/jafl.koplugin.zip` into KOReader's `plugins` directory. The final
 path must be `koreader/plugins/jafl.koplugin/main.lua`. Restart KOReader, then
 select **Tools → Fabled Lands → New adventure**.
 
-The packaged plugin includes the six books in this repository. Developers can
-also copy `plugins/jafl.koplugin` directly; a source checkout automatically finds
-the books at the repository root. Set `jafl_content_root` in KOReader's reader
-settings to use a different content-pack directory containing `books.ini`.
+The packaged plugin includes the six books in this repository and always prefers
+that complete bundled pack. Developers can also copy `plugins/jafl.koplugin`
+directly; when no bundled pack exists, `jafl_content_root` in KOReader's reader
+settings can select a content-pack directory containing `books.ini`, and a source
+checkout otherwise finds the books at the repository root.
 
 ## Controls
 
@@ -48,3 +49,9 @@ make koreader-plugin
 
 The validator parses every book XML file and checks destinations, illustrations,
 and the expected content vocabulary before a package is built.
+
+See [GAME_LOGIC.md](GAME_LOGIC.md) for the ordered-execution model, Java combat
+parity rules, post-combat behavior, and supported combat-related state effects.
+
+See [TEXT_PARSING_AUDIT.md](TEXT_PARSING_AUDIT.md) for a node-by-node comparison
+of Java and KOReader text parsing and the remaining presentation differences.

@@ -34,17 +34,19 @@ function JaFL:init()
 end
 
 function JaFL:contentRoot()
-    local configured = G_reader_settings:readSetting("jafl_content_root")
-    if configured then
-        return configured
-    end
-
+    -- An installed plugin ships a complete, mutually consistent six-book pack.
+    -- Prefer it over a stale jafl_content_root left by an older/source install.
     local bundled = plugin_dir .. "contentpack"
     local f = io.open(bundled .. "/books.ini", "rb")
 
     if f then
         f:close()
         return bundled
+    end
+
+    local configured = G_reader_settings:readSetting("jafl_content_root")
+    if configured then
+        return configured
     end
 
     return plugin_dir .. "../.."
@@ -70,7 +72,7 @@ function JaFL:open(new_game)
         title = _("Fabled Lands"),
     }
 
-    self.game_view:start()
+    self.game_view:start(new_game and game:choose_starting_book() or nil)
 end
 
 function JaFL:addToMainMenu(menu_items)
