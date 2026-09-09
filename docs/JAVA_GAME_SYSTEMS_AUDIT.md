@@ -237,7 +237,7 @@ continuations.
   continuation semantics. Current source-cache transfer moves every item even
   when a filter is authored.
 
-### 3.6 Ships, crew, cargo, sailing, and maritime trade — **Missing**
+### 3.6 Ships, crew, cargo, sailing, and maritime trade — **Partial**
 
 **Java behavior**
 
@@ -251,19 +251,20 @@ continuations.
 
 **KOReader now**
 
-- Has an unused `ships = {}` state slot and sets `at_sea` for a sailing goto.
-- Generic market handling incorrectly treats ship/cargo/crew transactions as
-  ordinary named items or empty names.
+- Models Barques, Brigantines, and Galleons with Java capacities, persistent
+  identity/name, bounded crew quality, cargo units, dock, and active selection.
+- Sailing and section dock metadata move the active ship. The character sheet
+  lists ships, crew and cargo, and actions can select a co-located ship.
+- Markets buy and sell ships and cargo, enforce capacity/ownership/funds, set or
+  upgrade crew, and run matching sold/bought transaction children.
 
 **Still needed**
 
-- The entire ship model and sheet, active-ship selection/swap, capacity and
-  location rules, crew quality, cargo inventory, sailing/docking state, and
-  ship persistence.
-- All `ship`, `crew`, `cargo`, `initialcrew`, `dock`, and related set/adjust/
-  tick/lose/buy/sell semantics. This is high priority: the corpus contains 178
-  `<trade>` nodes, 119 trade cargo attributes, 59 trade ship attributes, and
-  hundreds of crew adjustments.
+- Multi-ship selection prompts inside ambiguous authored loss/transfer nodes and
+  Java's separate ship-transfer dialog.
+- Complete `adjust`-child crew/ship pricing modifiers and unusual forced ship
+  losses; the common `ship`, `crew`, `cargo`, `initialcrew`, dock, gain/loss, and
+  buy/sell paths now use the fleet model.
 
 ### 3.7 Markets and trade events — **Partial**
 
@@ -289,11 +290,10 @@ continuations.
   from all Java flags and conditions.
 - Correct prices: corpus item nodes use `buy`/`sell`, while trade children mostly
   use `shards`; transaction direction and quantity need exact handling.
-- Ship/cargo/crew trade, multi-quantity transactions, replacements, tags,
-  effects, flags, and conditional price adjustments.
-- Execute `<tradeevent>` and `<sold>` hooks. Lua currently hides default child
-  text but otherwise walks trade-event children as ordinary section logic,
-  potentially applying transaction effects without a transaction.
+- Item replacements/tags/effects/flags and conditional price adjustments beyond
+  the common ship/cargo/crew transaction path.
+- Generalize transaction events beyond the corpus `sold` form; sold/bought child
+  programs now run only for their matching completed transaction.
 
 ### 3.8 Gain, loss, ticks, rest, and payment — **Partial**
 
@@ -552,7 +552,7 @@ change the `partial` and `missing` parity findings above; those remain checklist
 items for subsequent phases.
 
 The generated support inventory currently classifies the 69 observed tags as
-1 implemented, 47 partial, 4 missing, and 17 presentation/template tags. These
+1 implemented, 48 partial, 3 missing, and 17 presentation/template tags. These
 labels are the checklist baseline: completing later work should move entries
 from `partial`/`missing` to `implemented`, with a corresponding oracle test.
 
@@ -621,12 +621,22 @@ ship-cargo transfers remain in Phase 4; combat blessing consumption and roll
 undo remain in Phase 5; affliction lift prompts and unusual embedded use-effect
 programs remain explicit partial-tag follow-ups above.
 
-### Phase 4 — ships and economy
+### Phase 4 — ships and economy — **Complete**
 
-1. Implement ship/crew/cargo models and ship sheet.
-2. Port ship-aware set/adjust/tick/lose/transfer actions.
-3. Port trade buy/sell, capacity, pricing, trade events, and sold hooks.
-4. Test every maritime transition across books.
+- [x] Implement persistent ship, bounded crew, capacity-aware cargo, dock, and
+  active-ship models; expose fleet details on the character sheet and provide
+  co-located active-ship selection.
+- [x] Route common ship/crew/cargo set, gain, tick, loss, condition, sailing, and
+  dock behavior through the fleet model.
+- [x] Implement repeatable transactional ship/cargo/crew purchasing and selling,
+  affordability/capacity checks, initial crew, and matching sold/bought hooks.
+- [x] Exercise fleet constructors, capacity, cargo, location, crew, selection,
+  trade dispatch, event hooks, sheet output, and save structure in automated
+  Phase-4 checks.
+
+Phase 4 covers the corpus economy foundation. Ambiguous multi-ship prompts,
+conditional adjustment-child pricing, and the desktop-only ship-transfer dialog
+remain explicit partial follow-ups above rather than being silently ignored.
 
 ### Phase 5 — dice and combat parity
 
@@ -649,18 +659,20 @@ programs remain explicit partial-tag follow-ups above.
 
 These should be treated as correctness defects rather than polish:
 
-1. **Save replay:** reloading restarts the section and can duplicate earlier
-   state changes.
-2. **Ships/trade absent:** a major cross-book progression system has no model.
-3. **Effects absent:** displayed ability/Defence and rule checks can differ after
-   acquiring equipment, blessings, gods, or afflictions.
-4. **Generic mutation is too narrow:** common crew/cache/title/item variants are
+1. **Combat remains atomic:** grouped opponents, interactive rounds, hook
+   continuations, fleeing, blessings, and combat rerolls remain approximated.
+2. **Generic mutation is still incomplete:** uncommon title/item variants are
    ignored while execution continues.
-5. **Reroll is not reroll:** it neither repeats nor undoes the prior roll.
-6. **Combat hooks/groups are approximated:** rare authored fight mechanics can
-   resolve to a different outcome.
-7. **Extra choices absent:** acquired routes never become available later.
-8. **Silent fallback:** unknown executable semantics are frequently recursed or
+3. **Reroll is not reroll:** it neither repeats nor undoes the prior roll.
+4. **Ambiguous fleet operations:** multi-ship loss/transfer and conditional trade
+   adjustments still need explicit selection and pricing behavior.
+5. **Special effects remain:** embedded use-effect programs, affliction lifting,
+   and typed blessing consumption are incomplete.
+6. **Save reconstruction is path-based:** later work must preserve any new
+   interactive combat sub-state and add broader migration/corruption fixtures.
+7. **Extra-choice presentation differs:** routes work, but visible acquisition
+   does not yet reproduce Java's blocking/menu behavior.
+8. **Silent fallback:** some declared partial executable semantics are recursed or
    ignored rather than surfaced.
 
 ## 7. Java-reference caveats

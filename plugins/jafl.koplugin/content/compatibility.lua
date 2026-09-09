@@ -59,7 +59,7 @@ Compatibility.tags = {
     ["sectionview"] = { status="missing", attributes={ ["random"]=true, ["title"]=true } },
     ["sell"] = { status="partial", attributes={ ["cargo"]=true, ["item"]=true, ["price"]=true, ["quantity"]=true, ["shards"]=true } },
     ["set"] = { status="partial", attributes={ ["cache"]=true, ["codeword"]=true, ["dock"]=true, ["force"]=true, ["hidden"]=true, ["item"]=true, ["modifier"]=true, ["tags"]=true, ["value"]=true, ["var"]=true, ["weapon"]=true } },
-    ["sold"] = { status="missing", attributes={ ["item"]=true, ["tags"]=true } },
+    ["sold"] = { status="partial", attributes={ ["item"]=true, ["tags"]=true } },
     ["stamina"] = { status="presentation", attributes={ ["amount"]=true } },
     ["starting"] = { status="presentation", attributes={  } },
     ["success"] = { status="partial", attributes={ ["ability"]=true, ["book"]=true, ["section"]=true, ["var"]=true } },

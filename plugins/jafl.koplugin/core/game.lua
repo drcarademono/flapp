@@ -3,6 +3,7 @@ local Compatibility = require("content/compatibility")
 local Expression = require("core/expression")
 local Inventory = require("core/inventory")
 local Journal = require("core/journal")
+local Ships = require("core/ships")
 local State = require("core/state")
 
 local Game = {}; Game.__index = Game
@@ -118,7 +119,7 @@ function Game:condition(a)
     if ok and a.book then ok = self.catalog.books[tostring(a.book)] and self.catalog.books[tostring(a.book)].installed end
     if ok and a.rule then ok = self.state.models.rules.fixed[a.rule:lower()] or self.state.models.rules.temporary[a.rule:lower()] end
     if ok and a.ship then
-        ok=false; for _,ship in ipairs(self.state.models.fleet.ships) do if a.ship=="*" or ship.type==a.ship then ok=true; break end end
+        ok=#Ships.find(s,a.ship=="*" and nil or a.ship,true)>0
     end
     if ok and a.crew then
         local active=self.state.models.fleet.active; local ship=active and self.state.models.fleet.ships[active]
@@ -127,6 +128,10 @@ function Game:condition(a)
     if ok and a.docked then
         local active=self.state.models.fleet.active; local ship=active and self.state.models.fleet.ships[active]
         ok=ship~=nil and tostring(ship.docked)==tostring(a.docked)
+    end
+    if ok and a.cargo then
+        local ship=Ships.active(s); ok=false
+        if ship then for _,cargo in ipairs(ship.cargo) do if a.cargo=="*" or cargo:lower():match("^"..a.cargo:lower()) then ok=true; break end end end
     end
     if ok and a.ability then
         local score=self:ability(a.ability,a.modifier)
@@ -161,6 +166,20 @@ function Game:mutate(name, a, direction)
         State.remove_matching_items(s,a)
     end
     local amount = self:value(a.amount or a.value or a.stamina or 1) * direction
+    if a.ship then
+        if direction>0 then Ships.new(s,a) else Ships.remove(s,a.ship) end
+        return
+    elseif a.cargo then
+        local ship=Ships.active(s)
+        if direction>0 then Ships.add_cargo(ship,a.cargo,a.quantity) else Ships.remove_cargo(ship,a.cargo,a.quantity or a.amount) end
+        return
+    elseif a.crew then
+        local ship=Ships.active(s)
+        if direction>0 and not ship then Ships.new(s,{ship="barque",crew=a.crew})
+        elseif tonumber(a.crew) then Ships.adjust_crew(ship,tonumber(a.crew)*direction)
+        elseif ship then ship.crew.quality=Ships.crew(a.crew) end
+        return
+    end
     local ability = a.ability and a.ability:gsub("^%l", string.upper)
     if ability == "Stamina" then s.stamina = math.max(0, math.min(s.max_stamina, s.stamina + amount))
     elseif ability == "Rank" then
@@ -365,6 +384,9 @@ function Game:open_market(node, message)
                         self:add_action("Sell "..(a.name or "item").." ("..self:value(a.sell).." shards)","sell",
                             {attr=a,node=child,cost=self:value(a.sell),market=node})
                     end
+                elseif child.name=="trade" then
+                    if a.buy then self:add_action("Buy "..(a.ship or a.cargo or a.item or plain(child)).." ("..self:value(a.buy).." shards)","ship_trade",{node=child,market=node,direction=1,cost=self:value(a.buy)}) end
+                    if a.sell then self:add_action("Sell "..(a.ship or a.cargo or a.item or plain(child)).." ("..self:value(a.sell).." shards)","ship_trade",{node=child,market=node,direction=-1,cost=self:value(a.sell)}) end
                 elseif child.name=="buy" or child.name=="sell" then
                     local cost=self:value(a.price or a.shards or a.amount or 0)
                     self:add_action((child.name=="buy" and "Buy " or "Sell ")..(a.name or a.item or plain(child))..
@@ -563,6 +585,8 @@ function Game:walk(node, enabled)
         end
         return
     elseif n=="section" then
+        local dock=a.todock or a.dock
+        if dock then Ships.set_location(self.state,dock) end
         for _,choice in pairs(self.state.models.extra_choices) do
             local active=choice.activation or {}
             if (active.book==self.state.book and active.section==self.state.section) or
@@ -578,6 +602,9 @@ function Game:walk(node, enabled)
                 self:add_action(effect.text or ("Use "..item.name),"use_item",{index=index,effect=effect_index})
             end end
         end
+        for index,ship in ipairs(self.state.models.fleet.ships) do if index~=self.state.models.fleet.active and Ships.here(self.state,ship) then
+            self:add_action("Select "..ship.name,"select_ship",{index=index})
+        end end
     elseif n=="goto" then
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
@@ -882,6 +909,10 @@ function Game:_choose(index)
     if action.kind=="startbook" then
         self.state.book=tostring(action.data.book); self.state.section="New"
         return self:load(self.state.book,self.state.section)
+    elseif action.kind=="select_ship" then
+        local ship=self.state.models.fleet.ships[action.data.index]; if not ship then return nil,"Ship is no longer available." end
+        self.state.models.fleet.active=action.data.index
+        return {title="Ship selected",text="Selected "..ship.name..".",actions=self.actions,image=self.image}
     elseif action.kind=="equip" then
         local item=self.state.items[action.data.index]; if not item then return nil,"Item is no longer available." end
         Inventory.equip(self.state,item)
@@ -982,7 +1013,7 @@ function Game:_choose(index)
     elseif action.kind=="goto" then
         local a=action.data
         if truth(a.pay,a.shards~=nil) then self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0)); if a.item then State.remove_item(self.state,a.item,1) end end
-        if a.sail then self.state.at_sea=true end
+        if a.sail then self.state.at_sea=true; Ships.set_location(self.state,"*sea*") end
         local starters={Liana={"Wayfarer",2,5,2,3,6,4},Andriel={"Warrior",3,6,2,4,3,2},
             Chalor={"Mage",2,2,6,1,5,3},Marana={"Rogue",5,4,4,1,2,6},
             Ignatius={"Priest",4,2,3,6,4,2},Astariel={"Troubadour",6,3,4,3,2,4}}
@@ -1039,6 +1070,27 @@ function Game:_choose(index)
         return {title=data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
     elseif action.kind=="leave_cache" then
         return {title="Cache",text=table.concat(self.text,"\n"),actions={},image=self.image}
+    elseif action.kind=="ship_trade" then
+        local data,node=action.data,action.data.node; local a=node.attr; local ship=Ships.active(self.state)
+        if data.direction>0 then
+            if self.state.shards<data.cost then return nil,"You cannot afford that." end
+            if a.ship then Ships.new(self.state,a)
+            elseif a.cargo then if not Ships.add_cargo(ship,a.cargo,a.quantity) then return nil,"The selected ship has no cargo space." end
+            elseif a.crew then if not ship then return nil,"There is no ship here." end; ship.crew.quality=Ships.crew(a.crew)
+            else State.add_item(self.state,item_from(a,node)) end
+            self.state.shards=self.state.shards-data.cost
+        else
+            local sold=a.ship and Ships.remove(self.state,a.ship) or a.cargo and Ships.remove_cargo(ship,a.cargo,a.quantity) or State.remove_item(self.state,a.item or a.name,tonumber(a.quantity) or 1)
+            if not sold then return nil,"There is nothing matching that sale here." end
+            self.state.shards=self.state.shards+data.cost
+        end
+        for _,child in ipairs(node.children or {}) do
+            if type(child)=="table" and ((data.direction<0 and child.name=="sold") or (data.direction>0 and child.name=="bought")) then
+                for _,effect in ipairs(child.children or {}) do self:walk(effect,true) end
+            end
+        end
+        self:open_market(data.market,(data.direction>0 and "Purchase completed." or "Sale completed."))
+        return {title="Market",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="fight" then
         local fight_node=action.data; local a=fight_node.attr
         local enemy_stamina=self:value(a.stamina or a.endurance or 1)
@@ -1156,8 +1208,8 @@ function Game:choose(index)
     self.preview_text=nil
     self.journal:begin(action.kind)
     local progress=self.state.progress
-    local resolves={skillcheck=true,random=true,fight=true,training=true,return=true,rest=true,mutate=true,group=true,
-        resurrection=true,resurrect=true,leave_market=true,goto=true}
+    local resolves={skillcheck=true,random=true,fight=true,training=true,["return"]=true,rest=true,mutate=true,group=true,
+        resurrection=true,resurrect=true,leave_market=true,["goto"]=true}
     if resolves[action.kind] and progress and action.instruction then progress.completed[action.instruction]=true end
     self.state.pending=nil
     local ok,result,err=pcall(self._choose,self,index)

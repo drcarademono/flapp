@@ -13,7 +13,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -354,6 +354,21 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('action.kind=="cache_item"', game)
         self.assertIn("Inventory.cache_accepts", game)
         self.assertIn('self:ability("Combat")', game)
+
+    def test_phase_four_ship_and_trade_foundation(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        ships = (PLUGIN / "core" / "ships.lua").read_text()
+        view = (PLUGIN / "ui" / "gameview.lua").read_text()
+        for function in ("new", "active", "here", "find", "remove", "free_space", "add_cargo", "remove_cargo", "set_location", "adjust_crew"):
+            self.assertIn("function Ships." + function, ships)
+        self.assertIn('action.kind=="ship_trade"', game)
+        self.assertIn('action.kind=="select_ship"', game)
+        self.assertIn('child.name=="sold"', game)
+        self.assertIn('lines[#lines+1]=_("Ships:")', view)
+        self.assertIn('["return"]=true', game)
+        self.assertIn('["goto"]=true', game)
+        self.assertNotIn('return=true', game)
+        self.assertNotIn('goto=true', game)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

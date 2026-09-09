@@ -7,7 +7,7 @@ local function empty_models()
     return {
         stats={natural={},modifiers={},derived={}}, equipment={weapon=nil,armour=nil,tools={}},
         afflictions={blessings={},curses={},diseases={},poisons={}},
-        fleet={active=nil,ships={}}, rules={fixed={},temporary={}}, god_effects={}, next_item_id=1, visits={},
+        fleet={active=nil,ships={},location="*land*",next_id=1}, rules={fixed={},temporary={}}, god_effects={}, next_item_id=1, visits={},
         extra_choices={}, cache_metadata={},
     }
 end
@@ -101,6 +101,7 @@ function State.validate(s)
     s.models.equipment=s.models.equipment or {weapon=nil,armour=nil,tools={}}
     s.models.afflictions=s.models.afflictions or {blessings={},curses={},diseases={},poisons={}}
     s.models.fleet=s.models.fleet or {active=nil,ships={}}
+    s.models.fleet.location=s.models.fleet.location or "*land*"; s.models.fleet.next_id=s.models.fleet.next_id or 1
     s.models.rules=s.models.rules or {fixed={},temporary={}}
     s.models.god_effects=s.models.god_effects or {}
     s.models.next_item_id=s.models.next_item_id or 1

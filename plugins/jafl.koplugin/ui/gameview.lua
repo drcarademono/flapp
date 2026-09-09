@@ -79,6 +79,15 @@ function GameView:showSheet()
     for _,name in ipairs(require("core/state").ability_names) do lines[#lines+1]=name..": "..tostring(s.abilities[name] or "—") end
     lines[#lines+1]=""; lines[#lines+1]=_("Possessions:")
     for _,item in ipairs(s.items) do lines[#lines+1]="• "..item.name..((item.quantity or 1)>1 and (" ×"..item.quantity) or "") end
+    local fleet=s.models and s.models.fleet
+    if fleet and #fleet.ships>0 then
+        lines[#lines+1]=""; lines[#lines+1]=_("Ships:")
+        for index,ship in ipairs(fleet.ships) do
+            local cargo=#ship.cargo>0 and table.concat(ship.cargo,", ") or _("none")
+            lines[#lines+1]=string.format("%s• %s (%s), %s %d, %s: %s",fleet.active==index and "* " or "",
+                ship.name,ship.type,_("crew"),ship.crew.quality,_("cargo"),cargo)
+        end
+    end
     UIManager:show(TextViewer:new{title=_("Adventure sheet"),text=table.concat(lines,"\n")})
 end
 
