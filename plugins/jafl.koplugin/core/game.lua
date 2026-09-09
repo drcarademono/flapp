@@ -1,5 +1,6 @@
 local XML = require("content/xml")
 local Compatibility = require("content/compatibility")
+local Combat = require("core/combat")
 local Expression = require("core/expression")
 local Inventory = require("core/inventory")
 local Journal = require("core/journal")
@@ -208,7 +209,7 @@ end
 
 function Game:add_action(label, kind, data)
     local source=type(data)=="table" and (data.node or data.market or (data.name and data.children and data)) or nil
-    local action = { label=label, kind=kind, data=data, instruction=source and source._path or self.current_node and self.current_node._path }
+    local action = { label=label, kind=kind, data=data, instruction=data and data.instruction or source and source._path or self.current_node and self.current_node._path }
     self.actions[#self.actions+1] = action
     if kind=="skillcheck" or kind=="random" or kind=="fight" or kind=="training" or kind=="goto" or
             kind=="market" or kind=="return" or kind=="resurrection" then
@@ -263,12 +264,6 @@ local function roll_dice(game, count)
     return total
 end
 
--- FightNode.java does not use a fixed weapon/enemy damage value.  A successful
--- attack deals the entire amount by which (dice + COMBAT) beats Defence.
-local function combat_damage(roll, defence)
-    return math.max(0, roll - defence)
-end
-
 local function range_matches(spec, value)
     if not spec then return true end
     local lo,hi=spec:match("^(%-?%d+)%-(%-?%d+)$")
@@ -281,15 +276,17 @@ local function range_matches(spec, value)
 end
 
 local function pair_fight_nodes(root)
-    local fights,damage,rounds,flees={},{},{},{}
+    local fights,damage,rounds,flees,by_path,groups,flee_choices={},{},{},{},{},{},{}
     local function visit(node,parent,index,path)
         if type(node)~="table" then return end
         node._parent,node._index=parent,index
         node._path=path or "1"
+        by_path[node._path]=node
         if node.name=="fight" then fights[#fights+1]=node
         elseif node.name=="fightdamage" then damage[#damage+1]=node
         elseif node.name=="fightround" then rounds[#rounds+1]=node
         elseif node.name=="flee" then flees[#flees+1]=node end
+        if node.name=="choice" and node.attr.flee then flee_choices[node.attr.flee]=flee_choices[node.attr.flee] or {}; flee_choices[node.attr.flee][#flee_choices[node.attr.flee]+1]=node end
         for child_index,child in ipairs(node.children or {}) do
             if type(child)=="table" then visit(child,node,child_index,(path or "1").."."..child_index) end
         end
@@ -297,7 +294,16 @@ local function pair_fight_nodes(root)
     visit(root,nil,nil,"1")
     for i,fight in ipairs(fights) do
         fight.fightdamage=damage[i]; fight.fightround=rounds[i]; fight.flee_node=flees[i]
+        if fight.attr.group then groups[fight.attr.group]=groups[fight.attr.group] or {}; groups[fight.attr.group][#groups[fight.attr.group]+1]=fight end
     end
+    return by_path,groups,flee_choices
+end
+
+function Game:combat_hook(kind,path)
+    local node=self.nodes_by_path[path]; if not node then return end
+    local hook=kind=="damage" and node.fightdamage or kind=="round" and node.fightround or node.flee_node
+    for _,child in ipairs(hook and hook.children or {}) do self:walk(child,true) end
+    return hook and kind=="damage" and tostring(hook.attr.type or ""):match("^repl")~=nil
 end
 
 function Game:preview_after(node)
@@ -676,7 +682,7 @@ function Game:walk(node, enabled)
     elseif n=="reroll" then
         local label=self:node_text(node)
         self.text[#self.text+1]=label
-        self:add_action(label,"random",node)
+        self:add_action(label,"reroll",node)
         self:preview_after(node); self:pause_section(); return
     elseif n=="success" or n=="failure" then
         local result=self.state.variables[a.var or "*difficulty*"]
@@ -758,7 +764,9 @@ function Game:walk(node, enabled)
     elseif n=="training" then
         local label=self:node_text(node)
         self.text[#self.text+1]=label
-        self:add_action(label,"training",node)
+        if a.ability=="?" then
+            for _,ability in ipairs(State.ability_names) do self:add_action(label.." ("..ability..")","training",{node=node,ability=ability}) end
+        else self:add_action(label,"training",node) end
         self:preview_after(node); self:pause_section(); return
     elseif n=="resurrection" then
         local label=self:node_text(node) or (a.section and "Arrange resurrection" or "Use resurrection")
@@ -888,9 +896,14 @@ function Game:load(book, section)
     self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil; self.blocking_node=nil
     if not self.restoring then self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil end
     self.pending_checks={}; self.checks_by_var={}
-    pair_fight_nodes(root)
+    self.nodes_by_path,self.fight_groups,self.flee_choices=pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
+    if self.state.combat and self.state.combat.book==self.state.book and self.state.combat.section==self.state.section then
+        self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
+        if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
+        for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
+    end
     if self.restoring and pending and (pending.resume_kind=="market" or pending.resume_kind=="buy" or pending.resume_kind=="sell") then
         for _,action in ipairs(self.actions) do
             if action.kind=="market" then self:open_market(action.data); break end
@@ -953,6 +966,45 @@ function Game:_choose(index)
         self.actions={}
         for _,child in ipairs(action.data.children or {}) do self:walk(child,true) end
         return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="reroll" then
+        local record,error_message=self.journal:undo(); if not record then return nil,error_message end
+        local meta=record.metadata or {}; local a=meta.attr or {}
+        if meta.kind=="random" then
+            local source=self.nodes_by_path and self.nodes_by_path[meta.instruction]
+            local roll=roll_dice(self,tonumber(a.dice) or 2)+(source and self:check_adjustment(source) or 0)
+            self.state.variables[a.var or "*random*"]=roll
+            return {title="Reroll result",text="Rolled "..roll..".",actions=self.actions,image=self.image}
+        elseif meta.kind=="skillcheck" then
+            local ability=meta.ability or words(a.ability)[1]; local score=self:ability(ability)
+            local source=self.nodes_by_path and self.nodes_by_path[meta.instruction]
+            local adjustment=source and self:check_adjustment(source) or 0
+            local roll
+            if meta.node_name=="rankcheck" then
+                roll=roll_dice(self,tonumber(a.dice) or 1)+self:value(a.add or 0)+adjustment
+                self.state.variables[a.var or "*difficulty*"]=self.state.rank-roll+1
+            else
+                roll=self:roll(6)+self:roll(6)+score+adjustment
+                self.state.variables[a.var or "*difficulty*"]=roll-self:value(a.level)
+            end
+            return {title="Reroll result",text=ability_key(ability).." reroll: "..roll..".",actions=self.actions,image=self.image}
+        elseif meta.kind=="training" then
+            local ability=ability_key(meta.ability or a.ability); local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
+            if ability and roll>(self.state.abilities[ability] or 0) then self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1) end
+            return {title="Reroll result",text="Training reroll: "..roll..".",actions=self.actions,image=self.image}
+        elseif meta.kind=="combat_attack" and self.state.combat then
+            local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
+            local log=table.concat(self.state.combat.log,"\n")
+            if status=="ongoing" then
+                self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
+                if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
+                for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
+                return {title="Combat reroll",text=log,actions=self.actions,image=self.image}
+            end
+            local opponents=self.state.combat.opponents; self.state.combat=nil; self.actions={}
+            if self.state.progress then for _,enemy in ipairs(opponents) do self.state.progress.completed[enemy.path]=true end end; self:resume_section()
+            return {title="Combat reroll",text=log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated."),actions=self.actions,image=self.image}
+        end
+        return nil,"The preceding action cannot be rerolled."
     elseif action.kind=="skillcheck" then
         local node,a=action.data.node,action.data.node.attr
         local adjustment=self:check_adjustment(node)
@@ -1033,7 +1085,8 @@ function Game:_choose(index)
         if not destination then return nil,"There is no previous section." end
         return self:load(destination.book,destination.section)
     elseif action.kind=="training" then
-        local a=action.data.attr; local ability=ability_key(a.ability)
+        local node=action.data.node or action.data; local a=node.attr
+        local ability=ability_key(action.data.ability or a.ability)
         local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
         local old_score=ability and self:ability(ability) or 0
         if ability and ability~="?" and roll>(self.state.abilities[ability] or 0) then
@@ -1092,86 +1145,40 @@ function Game:_choose(index)
         self:open_market(data.market,(data.direction>0 and "Purchase completed." or "Sale completed."))
         return {title="Market",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="fight" then
-        local fight_node=action.data; local a=fight_node.attr
-        local enemy_stamina=self:value(a.stamina or a.endurance or 1)
-        local enemy_defence=self:value(a.defence or 0)
-        local enemy_combat=self:value(a.combat or a.attack or 0)
-        local flee_at=math.max(0,self:value(a.flee or 0))
-        -- XML.parse normalizes every attribute name to lower case.
-        local player_defence=a.playerdefence and self:value(a.playerdefence) or self.state.defence
-        local attack_dice=tonumber(a.attackdice) or 2
-        local enemy_attacks=tonumber(a.attacks) or 1
-        local player_first=truth(a.playerfirst,true)
-        local rounds,log=0,{}
-
-        local pre_damage=a.predamage and self:value(a.predamage) or 0
-        if pre_damage>0 then
-            local dealt=math.min(pre_damage,enemy_stamina)
-            enemy_stamina=enemy_stamina-dealt
-            log[#log+1]=string.format("Before combat, %s takes %d damage.",a.name or "the enemy",dealt)
-            if a.staminalost then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+dealt end
+        local node=action.data
+        local opponents=node.attr.group and self.fight_groups[node.attr.group] or {node}
+        local combat=Combat.start(self,node,opponents)
+        combat.book,combat.section=self.state.book,self.state.section
+        self.actions={}; self:add_action("Attack","combat_attack",{instruction=node._path})
+        if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=node._path}) end
+        for _,choice in ipairs(self.flee_choices[node.attr.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=node._path,destination=choice.attr}) end
+        return {title="Combat",text=table.concat(combat.log,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_attack" then
+        local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
+        local combat=self.state.combat; local log=table.concat(combat.log,"\n")
+        if status=="ongoing" then
+            self.actions={}; self:add_action("Attack","combat_attack",action.data)
+            if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",action.data) end
+            for _,choice in ipairs(self.flee_choices[combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr}) end
+            return {title="Combat — round "..combat.round,text=log,actions=self.actions,image=self.image}
         end
-
-        local function enemy_turn()
-            for attack_number=1,enemy_attacks do
-                if self.state.stamina<=0 then break end
-                local roll=roll_dice(self,2)+enemy_combat
-                local damage=combat_damage(roll,player_defence)
-                if damage>0 then
-                    local replacement=fight_node.fightdamage and fight_node.fightdamage.attr.type and
-                        fight_node.fightdamage.attr.type:match("^repl")
-                    if replacement then
-                        -- Replacement damage nodes own the damage; their common authored form
-                        -- removes one randomly selected ability point per successful hit.
-                        local abilities=State.ability_names
-                        local ability=abilities[self:roll(#abilities)]
-                        self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-1)
-                    elseif a.abilitydamaged and a.abilitydamaged:lower()~="stamina" then
-                        local ability=ability_key(a.abilitydamaged)
-                        self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-damage)
-                    else
-                        self.state.stamina=math.max(0,self.state.stamina-damage)
-                    end
-                    if fight_node.fightdamage then
-                        local function damage_effect(node)
-                            if type(node)~="table" then return end
-                            if node.name=="tick" then self:mutate("tick",node.attr,1)
-                            elseif node.name=="gain" then self:mutate("gain",node.attr,1)
-                            elseif node.name=="lose" and not replacement then self:mutate("lose",node.attr,-1) end
-                            for _,child in ipairs(node.children or {}) do damage_effect(child) end
-                        end
-                        damage_effect(fight_node.fightdamage)
-                    end
-                end
-                local suffix=enemy_attacks>1 and string.format(" (attack %d)",attack_number) or ""
-                log[#log+1]=string.format("%s rolls %d against Defence %d%s: %s.",a.name or "Enemy",roll,
-                    player_defence,suffix,damage>0 and (damage.." damage") or "miss")
-            end
-        end
-
-        while enemy_stamina>flee_at and self.state.stamina>0 and rounds<100 do
-            rounds=rounds+1
-            if not player_first then enemy_turn(); player_first=true end
-            if self.state.stamina<=0 then break end
-            local roll=roll_dice(self,attack_dice)+self:ability("Combat")
-            local damage=combat_damage(roll,enemy_defence)
-            enemy_stamina=math.max(0,enemy_stamina-damage)
-            if a.staminalost and damage>0 then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+damage end
-            log[#log+1]=string.format("You roll %d against %s's Defence %d: %s. (%d Stamina left)",roll,
-                a.name or "the enemy",enemy_defence,damage>0 and (damage.." damage") or "miss",enemy_stamina)
-            if enemy_stamina>flee_at then enemy_turn() end
-        end
-
-        local won=enemy_stamina<=flee_at and self.state.stamina>0
-        local combat_result="\n\n"..table.concat(log,"\n").."\n\n"..(won and "You win the fight." or "You have been defeated.")
-
-        self.actions={}
-        -- Just like ExecutableRunner.continueExecution(), resume after the fight.
-        -- This evaluates dead= conditions and applies effects in their authored
-        -- order, stopping at the first usable forced goto.
+        if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        self.state.combat=nil; self.actions={}
         self:resume_section()
-        self.text[#self.text+1]=combat_result
+        self.text[#self.text+1]="\n\n"..log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated.")
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_skip" then
+        local combat=self.state.combat
+        if not combat or not Combat.stalemate(self) then return nil,"Combat is not stalemated." end
+        if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        self.state.combat=nil; self.actions={}; self:resume_section()
+        self.text[#self.text+1]="\n\nNeither side can harm the other; combat is skipped."
+        return {title="Combat skipped",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_flee" then
+        local combat=self.state.combat; Combat.flee(self)
+        self.actions={}; if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        if action.data.destination then return self:load(action.data.destination.book or self.state.book,action.data.destination.section) end
+        self:resume_section(); return {title="Fled combat",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="market" then
         self:open_market(action.data)
         return {title="Market",text=table.concat(self.text),actions=self.actions}
@@ -1206,11 +1213,17 @@ function Game:choose(index)
     local action=self.actions[index]
     if not action then return nil,"Invalid choice" end
     self.preview_text=nil
-    self.journal:begin(action.kind)
+    local metadata={kind=action.kind,instruction=action.instruction}
+    local node=type(action.data)=="table" and (action.data.node or (action.data.attr and action.data)) or nil
+    if node and node.attr then metadata.attr=State.copy(node.attr); metadata.ability=action.data.ability; metadata.node_name=node.name end
+    if action.kind=="random" or action.kind=="fight" then metadata.attr=State.copy(action.data.attr or {}) end
+    self.journal:begin(action.kind,metadata)
     local progress=self.state.progress
     local resolves={skillcheck=true,random=true,fight=true,training=true,["return"]=true,rest=true,mutate=true,group=true,
         resurrection=true,resurrect=true,leave_market=true,["goto"]=true}
-    if resolves[action.kind] and progress and action.instruction then progress.completed[action.instruction]=true end
+    -- Starting a round-based fight is not resolution; its grouped instructions
+    -- are marked only after victory, defeat, flee, or an explicit stalemate skip.
+    if resolves[action.kind] and action.kind~="fight" and progress and action.instruction then progress.completed[action.instruction]=true end
     self.state.pending=nil
     local ok,result,err=pcall(self._choose,self,index)
     if not ok or not result then

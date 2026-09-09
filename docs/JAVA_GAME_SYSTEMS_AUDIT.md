@@ -372,6 +372,10 @@ continuations.
 - Implements the main dice formulas, ranges, stored values, outcomes, multiple
   ability buttons, optional/forced checks, adjustments, flags, and training.
 - Preserves execution order around rolls.
+- Retains bounded undo snapshots with roll metadata. Reroll actions restore the
+  pre-roll state and repeat random, skill, training, or combat attack rolls.
+- Presents an explicit ability choice for `training ability="?"`; the selected
+  ability is retained in undo/reroll metadata.
 
 **Still needed**
 
@@ -379,11 +383,10 @@ continuations.
   executes `<adjust>` children with a condition and adds `amount`/`value`.
 - Correct success boundary and result-value parity should be locked down with
   Java fixtures, especially Rank and difficulty result variables.
-- Training ability choice (`ability="?"`), adjustment/effect/blessing rules,
-  caps, and undo.
-- A real last-roll/undo record. Lua maps reroll to the generic `random` handler
-  with the `<reroll>` node, so it rolls two dice, does not repeat a difficulty,
-  Rank, training, combat attack, or loss roll, and does not undo prior effects.
+- Remaining training adjustment/effect/blessing variants beyond the common
+  dice/add rule.
+- Extend reroll metadata to rare loss-node rollers and reproduce Java's exact
+  result prose/branch re-entry for every optional roll placement.
 - Serialize pending rolls and branches so reload does not replay or skip logic.
 
 ### 3.11 Combat — **Partial**
@@ -404,24 +407,23 @@ continuations.
 
 **KOReader now**
 
-- Resolves a whole fight in one action using the core attack/damage formulas.
-  It supports common attack count/dice/first/Defence/damaged-ability/pre-damage/
-  flee attributes, logs rolls, and resumes post-fight execution correctly.
-- Pairs hook nodes by ordinal position and implements a narrow subset of hook
-  mutations.
+- Uses a serialized round state machine with active opponent, enemy Stamina,
+  round, group, and log state. Each attack is transactional and separately
+  autosaved; authored player flee choices are available during combat.
+- Supports grouped opponents, attack count/dice/first/Defence/damaged-ability/
+  pre-damage/flee attributes, derived equipment effects, and Defence/injury
+  blessing consumption.
+- Runs paired round, damage, and enemy-flee programs at their combat timing;
+  replacement damage hooks own damage rather than supplementing it.
+- Detects mutual inability to inflict damage and offers an explicit skip, and
+  implements the corpus `modifiers="noarmour"` fight modifier.
 
 **Still needed**
 
-- Round-by-round UI and saved combat state, player flee/skip choices, reroll and
-  undo, and fights that cannot progress. The current 100-round cutoff silently
-  declares defeat even if both sides are unable to damage each other.
-- Grouped fights (12 corpus fight nodes), opponent switching, and the Java
-  group-wide combat lifecycle.
-- Execute arbitrary hook subprograms with correct timing, conditions, blockers,
-  pre-fight status, and replacement semantics. Ordinal global pairing is not
-  sufficient when ownership/group structure differs.
-- `usecache`, `modifiers`, attack bonus, effects/equipment, and all blessing
-  interactions.
+- Hook subprograms that themselves block need a dedicated nested combat
+  continuation instead of executing synchronously.
+- Unobserved `usecache` variants, additional modifiers, and the remaining luck/
+  wrath blessing interactions.
 - Exact death/fatal/injury behavior and post-combat undo state.
 
 ### 3.12 Resurrection and death — **Partial**
@@ -485,8 +487,8 @@ presentation, and styled-label details.
 
 - Populate and consume the structured records as their engines are implemented;
   model availability is not feature parity.
-- Persist an interactive, round-by-round combat once Phase 5 replaces the
-  current atomic whole-fight resolver.
+- Add nested continuation serialization for the rare combat hooks which contain
+  their own blocking action.
 - Add broader migration fixtures, explicit save corruption recovery, and make a
   Java-save import decision.
 - Implement or remove exposed hardcore/rule controls until semantics exist.
@@ -512,11 +514,11 @@ presentation, and styled-label details.
 | --- | --- | --- |
 | Containers/presentation | `section`, `p`, `h1`–`h4`, `b`, `i`, `table`, `tr`, `td`, `header`, `text`, `box`, `choices`, `abilities`, `items` | Parsed/rendered in simplified form. |
 | Branching/navigation | `if`, `elseif`, `else`, `choice`, `goto`, `return`, `while`, `group`, `sectionview` | Common branches/gotos/return work; group/while partial; sectionview missing. |
-| Rolls | `random`, `difficulty`, `rankcheck`, `outcomes`, `outcome`, `success`, `failure`, `adjust`, `reroll`, `training` | Main checks work; modifiers, undo/reroll, and some continuation cases remain. |
+| Rolls | `random`, `difficulty`, `rankcheck`, `outcomes`, `outcome`, `success`, `failure`, `adjust`, `reroll`, `training` | Main checks, ability selection, bounded undo, and reroll work; rare roller and continuation cases remain. |
 | State changes | `set`, `tick`, `gain`, `lose`, `rest`, `price` | Common scalar changes only; optional/interactive and many attribute forms missing. |
 | Items/effects | `item`, `weapon`, `armour`, `tool`, `effect`, `include`, `exclude`, `itemcache`, `moneycache`, `transfer` | Basic inventory and narrow transfer only; equipment/effects/filter/cache UI missing. |
 | Afflictions/death | `curse`, `disease`, `poison`, `resurrection` | Name storage/basic resurrection only. |
-| Combat | `fight`, `fightround`, `fightdamage`, `flee` | Automated basic fight; grouped/interactive/hooks/blessings/undo partial. |
+| Combat | `fight`, `fightround`, `fightdamage`, `flee` | Serializable interactive/grouped combat, ordinary hooks, flee, stalemate skip, common modifiers, blessings, and reroll work; blocking hooks remain partial. |
 | Commerce/ships | `market`, `trade`, `buy`, `sell`, `sold`, `tradeevent`, `adjustmoney` | Basic item market only; ship/cargo/crew/events/cache money math missing. |
 | Persistent/UI actions | `extrachoice`, `field`, `image` | Image works; extra choice and field behavior missing. |
 | Character templates | `adventurers`, `adventurer`, `profession`, `rank`, `stamina`, `gold` | Bypassed by hard-coded starter construction. |
@@ -638,12 +640,23 @@ Phase 4 covers the corpus economy foundation. Ambiguous multi-ship prompts,
 conditional adjustment-child pricing, and the desktop-only ship-transfer dialog
 remain explicit partial follow-ups above rather than being silently ignored.
 
-### Phase 5 — dice and combat parity
+### Phase 5 — dice and combat parity — **Implemented; blocking-hook follow-up open**
 
-1. Finish check modifiers, training selection, last-roll undo, and true reroll.
-2. Replace whole-fight simulation with a serializable round state machine.
-3. Add grouped fights, flee/skip, hook subprograms, effects/equipment/blessings,
-   inability-to-progress handling, and exact death routing.
+- [x] Persist bounded action snapshots and roll metadata; true reroll restores
+  pre-roll state and repeats random, skill, training, and combat attack rolls.
+- [x] Replace whole-fight simulation with a serializable, transactional round
+  state machine and autosave-compatible attack/flee actions.
+- [x] Add grouped opponent progression, player flee destinations, paired round/
+  damage/enemy-flee hooks, replacement damage, equipment-derived COMBAT and
+  Defence, and consumable Defence/injury blessings.
+- [x] Add explicit mutual-stalemate skip and the authored `noarmour` modifier.
+- [ ] Suspend and serialize a combat hook that starts another blocking action;
+  this is the sole uncompleted Phase-5 checklist item and is not represented as
+  complete elsewhere in this audit.
+
+Phase 5 establishes the combat/roll engine, but remains intentionally checked as
+open because blocking hook programs occur in authored content. Rare loss-node
+rollers remain recorded as a separate reroll follow-up above.
 
 ### Phase 6 — data-driven creation, rules, and completeness gate
 
@@ -659,11 +672,11 @@ remain explicit partial follow-ups above rather than being silently ignored.
 
 These should be treated as correctness defects rather than polish:
 
-1. **Combat remains atomic:** grouped opponents, interactive rounds, hook
-   continuations, fleeing, blessings, and combat rerolls remain approximated.
+1. **Blocking combat hooks:** ordinary round/damage/flee hooks work, but a hook
+   containing its own blocker needs nested continuation state.
 2. **Generic mutation is still incomplete:** uncommon title/item variants are
    ignored while execution continues.
-3. **Reroll is not reroll:** it neither repeats nor undoes the prior roll.
+3. **Rare rollers:** loss-node rolls are not yet covered by reroll metadata.
 4. **Ambiguous fleet operations:** multi-ship loss/transfer and conditional trade
    adjustments still need explicit selection and pricing behavior.
 5. **Special effects remain:** embedded use-effect programs, affliction lifting,

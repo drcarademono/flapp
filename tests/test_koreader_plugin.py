@@ -13,7 +13,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "core/combat.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -54,19 +54,20 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('text=_("Next")', source)
 
     def test_combat_matches_java_damage_and_resumes_section(self) -> None:
-        source = (PLUGIN / "core" / "game.lua").read_text()
-        self.assertIn("math.max(0, roll - defence)", source)
-        self.assertIn("local attack_dice=tonumber(a.attackdice) or 2", source)
-        self.assertIn("local enemy_attacks=tonumber(a.attacks) or 1", source)
-        self.assertIn("self.section_runner=coroutine.create", source)
-        self.assertIn("self:resume_section()", source)
-        self.assertIn("self:pause_section()", source)
-        self.assertIn("running==self.section_runner", source)
-        self.assertNotIn("local running,is_main=coroutine.running()", source)
-        self.assertNotIn("self:value(a.damage or 1)", source)
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        combat = (PLUGIN / "core" / "combat.lua").read_text()
+        self.assertIn("math.max(0,roll-defence)", combat)
+        self.assertIn("attackdice=tonumber(a.attackdice) or 2", combat)
+        self.assertIn("attacks=tonumber(a.attacks) or 1", combat)
+        self.assertIn("self.section_runner=coroutine.create", game)
+        self.assertIn("self:resume_section()", game)
+        self.assertIn("self:pause_section()", game)
+        self.assertIn("running==self.section_runner", game)
+        self.assertNotIn("local running,is_main=coroutine.running()", game)
+        self.assertNotIn("game:value(a.damage or 1)", combat)
 
     def test_combat_uses_parser_normalized_attribute_names(self) -> None:
-        source = (PLUGIN / "core" / "game.lua").read_text()
+        source = (PLUGIN / "core" / "combat.lua").read_text()
         for attribute in ("playerdefence", "attackdice", "playerfirst", "predamage",
                           "staminalost", "abilitydamaged"):
             self.assertIn("a." + attribute, source)
@@ -257,8 +258,8 @@ class KOReaderPluginTests(unittest.TestCase):
         source = (PLUGIN / "core" / "game.lua").read_text()
         training = source[source.index('elseif action.kind=="training"'):source.index('elseif action.kind=="resurrection"')]
         self.assertLess(training.index("self:resume_section()"), training.index('"\\n\\nTraining roll: "'))
-        fight = source[source.index('elseif action.kind=="fight"'):source.index('elseif action.kind=="market"')]
-        self.assertLess(fight.index("self:resume_section()"), fight.index("self.text[#self.text+1]=combat_result"))
+        fight = source[source.index('elseif action.kind=="combat_attack"'):source.index('elseif action.kind=="combat_flee"')]
+        self.assertLess(fight.index("self:resume_section()"), fight.index('self.text[#self.text+1]="\\n\\n"..log'))
 
     def test_optional_check_results_do_not_leak_into_prose(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
@@ -353,7 +354,8 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('action.kind=="cache_money"', game)
         self.assertIn('action.kind=="cache_item"', game)
         self.assertIn("Inventory.cache_accepts", game)
-        self.assertIn('self:ability("Combat")', game)
+        combat = (PLUGIN / "core" / "combat.lua").read_text()
+        self.assertIn('game:ability("Combat")', combat)
 
     def test_phase_four_ship_and_trade_foundation(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
@@ -369,6 +371,21 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('["goto"]=true', game)
         self.assertNotIn('return=true', game)
         self.assertNotIn('goto=true', game)
+
+    def test_phase_five_roll_and_combat_foundation(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        combat = (PLUGIN / "core" / "combat.lua").read_text()
+        journal = (PLUGIN / "core" / "journal.lua").read_text()
+        for function in ("start", "current", "enemy_turn", "stalemate", "attack", "flee"):
+            self.assertIn("function Combat." + function, combat)
+        self.assertIn('action.kind=="combat_attack"', game)
+        self.assertIn('action.kind=="combat_flee"', game)
+        self.assertIn('action.kind=="combat_skip"', game)
+        self.assertIn('self:add_action(label,"reroll",node)', game)
+        self.assertIn("function Journal:undo", journal)
+        self.assertIn("self.fight_groups", game)
+        self.assertIn("self.flee_choices", game)
+        self.assertIn('inventory.consume_blessing', combat)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

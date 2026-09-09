@@ -78,7 +78,7 @@ function Inventory.attach_god_effects(state,god,node)
 end
 
 function Inventory.ability(state,name,modifier)
-    local value=state.abilities[name] or 0
+    local value=state.abilities[name] or (name=="Defence" and state.defence) or (name=="Rank" and state.rank) or 0
     if modifier=="natural" then return state.models.stats.natural[name] or value end
     for _,effect in ipairs(effects_from(state)) do
         if effect.ability=="*" or tostring(effect.ability or ""):lower()==name:lower() then
@@ -88,6 +88,14 @@ function Inventory.ability(state,name,modifier)
         end
     end
     return math.max(0,value)
+end
+
+function Inventory.consume_blessing(state,name)
+    for key,value in pairs(state.blessings) do if key:lower():find(name:lower(),1,true) then
+        if type(value)~="table" or not value.permanent then state.blessings[key]=nil end
+        return true
+    end end
+    return false
 end
 
 function Inventory.afflict(state,kind,node)
@@ -113,8 +121,16 @@ function Inventory.bless(state,attributes)
     for _,ability in ipairs(State.ability_names) do if name and name:lower()==ability:lower() then
         value.type="ability"; value.effects[1]=State.new_effect{kind="aura",ability=ability,operation="add",value=value.bonus or 1}
     end end
+    if name and name:lower():find("defen",1,true) then
+        value.type="defence"; value.effects[1]=State.new_effect{kind="aura",ability="Defence",operation="add",value=value.bonus or 3}
+    end
     state.blessings[name]=value; state.models.afflictions.blessings=state.blessings
     return value
+end
+
+function Inventory.has_blessing(state,name)
+    for key in pairs(state.blessings) do if key:lower():find(name:lower(),1,true) then return true end end
+    return false
 end
 
 function Inventory.cache(state,key,attributes,node)
