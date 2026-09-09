@@ -406,6 +406,21 @@ class KOReaderPluginTests(unittest.TestCase):
             self.assertEqual(6, len(root.findall("./starting/adventurer")))
         subprocess.run(["python3", "tools/audit-koreader-reachability.py"], cwd=ROOT, check=True)
 
+    def test_post_audit_parity_hardening(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        inventory = (PLUGIN / "core" / "inventory.lua").read_text()
+        journal = (PLUGIN / "core" / "journal.lua").read_text()
+        main = (PLUGIN / "main.lua").read_text()
+        self.assertIn('node_kind=node and (node.name=="weapon"', game)
+        self.assertIn('self:ability("Defence")', game)
+        self.assertIn('function Game:route_death()', game)
+        self.assertIn('a.ability=="?"', game)
+        self.assertIn('state.models.equipment.weapon', inventory)
+        self.assertIn('state.models.equipment.armour', inventory)
+        self.assertIn('math.floor((value+divisor-1)/divisor)', inventory)
+        self.assertIn('if rng.cursor<#rng.draws then', journal)
+        self.assertIn('if load_error then', main)
+
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)
         archive = ROOT / "dist" / "jafl.koplugin.zip"

@@ -152,7 +152,7 @@ function State.remove_matching_items(s, a, count)
             local take=math.min(item.quantity or 1,count)
             local copy=State.copy(item); copy.quantity=take; table.insert(removed,copy)
             item.quantity=(item.quantity or 1)-take; count=count-take
-            if item.quantity<=0 then table.remove(s.items,i) end
+            if item.quantity<=0 then require("core/inventory").unequip(s,item); table.remove(s.items,i) end
         end
     end
     return removed
@@ -173,7 +173,7 @@ function State.remove_item(s, name, count)
         if item.name:lower() == name:lower() then
             local take = math.min(item.quantity or 1, count)
             item.quantity = (item.quantity or 1) - take; count = count - take
-            if item.quantity == 0 then table.remove(s.items, i) end
+            if item.quantity == 0 then require("core/inventory").unequip(s,item); table.remove(s.items, i) end
             if count == 0 then return true end
         end
     end

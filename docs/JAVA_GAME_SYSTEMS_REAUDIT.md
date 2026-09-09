@@ -140,19 +140,16 @@ items. This removes the previous hard-coded book-1 character table.
 
 **Still incomplete:**
 
-- Defence remains a cached scalar initialized at creation. Java recomputes it
-  from natural COMBAT, affected Rank, Defence effects, selected armour, and
-  active rules. Equipping, removing, replacing, or improving armour does not
-  reliably update Lua's scalar.
-- General item construction loses the XML element kind in several paths.
-  `item_from` sees attributes but not whether the node itself was `weapon`,
-  `armour`, or `tool`; purchased or gained equipment can become an ordinary
-  item and then cannot equip or affect conditions correctly.
+- Runtime Defence reads are now derived from natural COMBAT, Rank, selected
+  armour, and active effects. The legacy saved scalar and sheet presentation
+  still need removal, and rule-specific derivation needs oracle coverage.
+- General item construction now preserves whether the XML node was a weapon,
+  armour, or tool and removal clears selected equipment slots.
 - Natural, affected, testing, and value-purpose ability reads are not equivalent
   to Java. Lua has a natural-stat table but most mutations and consumers bypass
   its intended distinction.
-- Java effect division rounds positive values upward; Lua uses floor division.
-  Target/divide/add ordering and cumulative multipliers also differ.
+- Positive divided effects now use Java's upward rounding. Target/divide/add
+  ordering and cumulative multipliers still differ.
 - Rank advancement, maximum-Stamina advancement, and caps need oracle coverage.
 
 ### 4.2 Conditions, variables, expressions, and control flow — **Partial**
@@ -191,8 +188,8 @@ visit history record exist.
   affordability in all goto paths; some paths clamp money to zero.
 - Fixed rules have an API but no player-facing new-game selection. No current
   book declares temporary rules, so that path lacks authored verification.
-- Configured default death sections are not invoked when no usable authored
-  dead destination remains.
+- A fallback now offers an arranged resurrection or loads the configured book
+  death section when no action remains; exact Java death-menu timing is untested.
 - `sectionview` is intentionally excluded; this is documented rather than
   parity.
 
@@ -203,10 +200,8 @@ slots, simple aura/wielded/tool effects, and limited-use actions exist.
 
 **Still incomplete or incorrect:**
 
-- Item type loss during construction affects markets, gains, and subsequent
-  weapon/armour/tool predicates.
-- Equipment removal does not consistently clear slot IDs; duplicate IDs and
-  name-only sales/removals can leave stale selections.
+- Item type is now retained by the common constructor and selected slot IDs are
+  cleared on common removals; unusual chained/replacement paths still need tests.
 - Java automatically chooses or recalculates relevant equipment under rules
   which Lua does not reproduce.
 - Effect chains, cumulative multipliers, ordering, potion consumption, wildcard
@@ -335,8 +330,8 @@ consumed, charged, and routed; dead/alive destinations have basic gating.
 
 - Supplemental and replacement arrangements, god/flag eligibility, exact cost,
   restoration, and selection are incomplete.
-- There is no centralized death transition using the active book's configured
-  `Death` section when authored routes do not handle death.
+- A centralized fallback now uses the active book's configured `Death` section
+  when no action remains, but it is not yet the complete Java death transition.
 - Fatal loss, injury blessing, combat death, curse/effect cleanup, ship loss,
   resurrection offer, and route order are not integrated as one lifecycle.
 - A player can remain in a dead state with inappropriate actions because action
@@ -350,16 +345,16 @@ and KOReader autosave calls exist.
 
 **Still incomplete or incorrect:**
 
-- The RNG journal appends draws but never replays saved draws; its cursor is not
-  used to source deterministic values. Persisting it does not make restoration
-  deterministic.
+- The RNG journal now replays an existing saved suffix when its cursor is behind
+  the draw list. Complete deterministic restoration still needs behavioral
+  coverage for every mid-interaction and reroll boundary.
 - Reload reconstructs state by rewalking XML instead of restoring an executable
   frame stack. Nested interactions and dynamically generated action context can
   be lost or replayed.
 - Saved pending actions contain summaries which are not used to restore most
   action-specific data.
-- Invalid/corrupt saves are returned as errors by `Save:load`, but the plugin's
-  open path can replace a failed load with a new state without a recovery UI.
+- Invalid/corrupt saves are now reported instead of being replaced silently;
+  backup selection and repair/recovery UI remain absent.
 - Migration coverage is narrow; no Java save import exists.
 - Hardcore is an unused boolean and has no gameplay or save-policy behavior.
 
@@ -423,7 +418,7 @@ choice, availability, navigation, save, or rules consequence.
 | `RerollNode` | `reroll` | **Partial — high** | Does not reinvoke the complete original Roller plus owned mutation chain. |
 | `OutcomeNode`, `OutcomesTableNode` | `outcome`, `outcomes` | **Partial** | Complete flags/branches and nested blocking continuation. |
 | `DifficultyResultNode` | `success`, `failure` | **Partial** | Exact owner association and nested continuation across reload. |
-| `ItemNode`, `ItemGroupNode` | `item`, `weapon`, `armour`, `tool`, `items` | **Partial — high** | Kind preservation, replace, quantity, flags, selection, groups, effects, tags. |
+| `ItemNode`, `ItemGroupNode` | `item`, `weapon`, `armour`, `tool`, `items` | **Partial — high** | Common kind preservation works; replace, quantity, flags, selection, groups, effects, and tags remain. |
 | `EffectNode` | `effect` | **Partial** | Full chains, ordering, cumulative behavior, purposes, embedded use programs. |
 | `ItemFilterNode` | `include`, `exclude` | **Partial** | Not applied consistently to every item loss/transfer/trade context. |
 | `CacheNode` | `itemcache`, `moneycache` | **Partial** | Freeze/lifecycle, unnamed caches, exact availability, saved blocking selection. |
@@ -457,7 +452,7 @@ support or exclusion decision.
 | `Adventurer` | **Partial — high** | Natural/affected/current stats, derived Defence, caps, purposes, death/hardcore, complete save state. |
 | `Codewords`, `Flag`, `Title` | **Partial** | Numeric codeword values/listeners, transient flags, patterned/value titles, full serialization. |
 | `Item`, `ItemList`, `ItemGroupNode`, `IndexSet` | **Partial — high** | Selection, grouping, identity/quantity, equipped/kept state, filters, listeners, replacement. |
-| `Effect`, `AbilityEffect`, `EffectSet`, `UseEffect` | **Partial — high** | Ordering, ceil division, chains, cumulative multipliers, use programs, potion purpose/consumption. |
+| `Effect`, `AbilityEffect`, `EffectSet`, `UseEffect` | **Partial — high** | Basic division rounding now matches; ordering, chains, cumulative multipliers, use programs, potion purpose/consumption remain. |
 | `Blessing`, `BlessingList` | **Partial — high** | Ability/luck/storm/travel/wrath/immunity types, prompt/consumption/permanence. |
 | `Curse`, `CurseList` | **Partial — high** | Typed/cumulative instances, attached items/effects, prevention and interactive lifting. |
 | `Resurrection` | **Partial — high** | Full eligibility, supplemental/replacement state, integrated death handling. |
@@ -475,7 +470,7 @@ support or exclusion decision.
 | `MoneyChooser`, `DocumentChooser` | Rules-relevant money/item/ability selection | **Partial** through action buttons; many call sites missing |
 | `SectionBrowser`, `SectionViewNode` | Random/sequential preview | **Excluded by documented decision** |
 | `CodewordWindow` | Inspect codeword state | **Missing UI** |
-| `SavedGamePreview`, start/load flow | Save selection, corruption feedback, preview | **Partial**; single save and silent fallback risk |
+| `SavedGamePreview`, start/load flow | Save selection, corruption feedback, preview | **Partial**; corruption is reported, but only one save exists and preview/recovery are absent |
 | `ImageWindow` and map facilities | Reference media only | **Implemented / adapted** |
 
 The following classes are presentation infrastructure and were reviewed but do
@@ -522,9 +517,10 @@ all game logic. Use this second-pass list for remaining parity work.
   replace out-of-coroutine `walk` calls.
 - [ ] Implement blocking combat hooks first and add book 5/689 as an end-to-end
   save/reload fixture.
-- [ ] Add centralized death/resurrection routing with configured book death
-  sections.
-- [ ] Preserve and report corrupt-save errors instead of silently starting over.
+- [ ] Complete centralized death/resurrection routing. A fallback now offers an
+  arranged resurrection or the active book's configured death section when no
+  authored action remains, but the integrated lifecycle is still incomplete.
+- [x] Preserve and report corrupt-save errors instead of silently starting over.
 
 ### P1 — behavioral test foundation
 
@@ -537,7 +533,11 @@ all game logic. Use this second-pass list for remaining parity work.
 
 ### P2 — statistics, items, and mutations
 
-- [ ] Make Defence fully derived and fix equipment-kind preservation.
+- [ ] Complete derived-stat parity. Defence is now derived from natural COMBAT,
+  Rank, selected armour, and active effects; XML equipment kind is preserved
+  and slots clear on removal, but rule- and purpose-specific behavior remains.
+- [x] Apply selected weapon and best matching equipped-tool bonuses, and match
+  Java's upward rounding for positive divided ability effects.
 - [ ] Implement Java effect ordering, rounding, purpose-specific reads, and
   consumable use-effect programs.
 - [ ] Complete set/adjust/tick/gain/lose/price attributes, including interactive

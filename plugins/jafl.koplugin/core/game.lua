@@ -27,8 +27,10 @@ local function plain(node)
     return normalize_text(table.concat(out)):match("^%s*(.-)%s*$")
 end
 local function item_from(a,node)
+    local node_kind=node and (node.name=="weapon" or node.name=="armour" or node.name=="tool") and node.name or nil
     local item={ name=a.name or a.item or "item", quantity=tonumber(a.quantity or a.multiple) or 1, bonus=tonumber(a.bonus),
-        type=a.type, tags=a.tags, weapon=a.weapon, armour=a.armour }
+        kind=node_kind or a.type, ability=a.ability, group=a.group, tags=a.tags,
+        weapon=node_kind=="weapon" or a.weapon, armour=node_kind=="armour" or a.armour, tool=node_kind=="tool" or a.tool }
     item.effects={}
     for _,child in ipairs(node and node.children or {}) do if type(child)=="table" and child.name=="effect" then
         item.effects[#item.effects+1]={kind=child.attr.type or "aura",ability=child.attr.ability,
@@ -71,7 +73,7 @@ function Game:value(v)
         if lower=="stamina" then return self.state.stamina end
         if lower=="shards" then return self.state.shards end
         if lower=="rank" then return self.state.rank end
-        if lower=="defence" then return self.state.defence end
+        if lower=="defence" then return self:ability("Defence") end
         if lower=="weapon" then
             local id=self.state.models.equipment.weapon
             for _,item in ipairs(self.state.items) do if item.id==id or item.equipped and item.kind=="weapon" then return tonumber(item.bonus) or 0 end end
@@ -189,7 +191,12 @@ function Game:mutate(name, a, direction)
     elseif ability == "Rank" then
         s.rank = math.max(0, s.rank + amount)
         s.max_stamina=math.max(1,s.max_stamina+amount); s.stamina=math.min(s.stamina,s.max_stamina)
-    elseif ability then s.abilities[ability] = math.max(0, math.min(12, (s.abilities[ability] or 0) + amount))
+    elseif ability=="All" then
+        for _,name in ipairs(State.ability_names) do
+            s.abilities[name]=math.max(0,math.min(12,(s.abilities[name] or 0)+amount)); s.models.stats.natural[name]=s.abilities[name]
+        end
+    elseif ability and ability~="?" then
+        s.abilities[ability]=math.max(0,math.min(12,(s.abilities[ability] or 0)+amount)); s.models.stats.natural[ability]=s.abilities[ability]
     elseif a.shards or a.gold or name == "adjustmoney" then s.shards = math.max(0, s.shards + self:value(a.shards or a.gold or a.amount) * direction)
     elseif a.codeword then for _,v in ipairs(words(a.codeword)) do s.codewords[v] = direction > 0 or nil end
     elseif a.title then for _,v in ipairs(words(a.title)) do s.titles[v] = direction > 0 or nil end
@@ -333,6 +340,16 @@ end
 
 function Game:visible_text()
     return table.concat(self.text)..(self.preview_text or "")
+end
+
+function Game:route_death()
+    if self.state.profession=="" or self.state.stamina>0 or #self.actions>0 then return end
+    if self.state.resurrection then
+        self:add_action("Use arranged resurrection","resurrect",self.state.resurrection)
+        return
+    end
+    local death=self.catalog.books[self.state.book].properties.Death
+    if death and tostring(death)~=self.state.section then return self:load(self.state.book,death) end
 end
 
 function Game:check_adjustment(node)
@@ -643,10 +660,18 @@ function Game:walk(node, enabled)
         self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
         if a.god then Inventory.attach_god_effects(self.state,a.god,node) end
     elseif n=="gain" then
+        if a.ability=="?" then
+            for _,ability in ipairs(State.ability_names) do self:add_action((self:node_text(node) or "Choose ability").." ("..ability..")","mutate",{node=node,direction=1,ability=ability}) end
+            self:pause_section(); return
+        end
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Take gain","mutate",{node=node,direction=1}); return end
         self:mutate(n,a,1)
     elseif n=="lose" then
         if a.flag and not self.state.flags[a.flag] then return end
+        if a.ability=="?" then
+            for _,ability in ipairs(State.ability_names) do self:add_action((self:node_text(node) or "Choose ability").." ("..ability..")","mutate",{node=node,direction=-1,ability=ability}) end
+            self:pause_section(); return
+        end
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Pay cost","mutate",{node=node,direction=-1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
         self:mutate(n,a,-1)
@@ -931,6 +956,7 @@ function Game:load(book, section)
             if action.kind=="market" then self:open_market(action.data); break end
         end
     end
+    local death_result=self:route_death(); if death_result then return death_result end
     if not self.state.pending then
         self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,instruction=nil,actions={}}
     end
@@ -968,7 +994,8 @@ function Game:_choose(index)
         return {title="Item used",text=effect.text or ("Used "..item.name.."."),actions=self.actions,image=self.image}
     elseif action.kind=="mutate" then
         local node=action.data.node
-        self:mutate(node.name,node.attr,action.data.direction)
+        local attributes=State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end
+        self:mutate(node.name,attributes,action.data.direction)
         if action.data.direction>0 and node.attr.god then Inventory.attach_god_effects(self.state,node.attr.god,node) end
         if node.name=="tick" then self.state.ticks=self.state.ticks+self:value(node.attr.count or node.attr.amount or 1) end
         self.state.progress.applied[node._path]=true
@@ -1019,6 +1046,7 @@ function Game:_choose(index)
         elseif meta.kind=="training" then
             local ability=ability_key(meta.ability or a.ability); local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
             if ability and roll>(self.state.abilities[ability] or 0) then self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1) end
+            if ability then self.state.models.stats.natural[ability]=self.state.abilities[ability] end
             return {title="Reroll result",text="Training reroll: "..roll..".",actions=self.actions,image=self.image}
         elseif meta.kind=="combat_attack" and self.state.combat then
             local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
@@ -1031,6 +1059,7 @@ function Game:_choose(index)
             end
             local opponents=self.state.combat.opponents; self.state.combat=nil; self.actions={}
             if self.state.progress then for _,enemy in ipairs(opponents) do self.state.progress.completed[enemy.path]=true end end; self:resume_section()
+            local death_result=self:route_death(); if death_result then return death_result end
             return {title="Combat reroll",text=log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated."),actions=self.actions,image=self.image}
         end
         return nil,"The preceding action cannot be rerolled."
@@ -1118,6 +1147,7 @@ function Game:_choose(index)
         local old_score=ability and self:ability(ability) or 0
         if ability and ability~="?" and roll>(self.state.abilities[ability] or 0) then
             self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1)
+            self.state.models.stats.natural[ability]=self.state.abilities[ability]
         end
         self.state.variables.exp=roll-old_score
         if a.var then self.state.variables[a.var]=roll end
@@ -1192,6 +1222,7 @@ function Game:_choose(index)
         if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
         self.state.combat=nil; self.actions={}
         self:resume_section()
+        local death_result=self:route_death(); if death_result then return death_result end
         self.text[#self.text+1]="\n\n"..log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated.")
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="combat_skip" then
@@ -1199,6 +1230,7 @@ function Game:_choose(index)
         if not combat or not Combat.stalemate(self) then return nil,"Combat is not stalemated." end
         if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
         self.state.combat=nil; self.actions={}; self:resume_section()
+        local death_result=self:route_death(); if death_result then return death_result end
         self.text[#self.text+1]="\n\nNeither side can harm the other; combat is skipped."
         return {title="Combat skipped",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="combat_flee" then

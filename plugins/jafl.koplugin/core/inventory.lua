@@ -78,12 +78,29 @@ function Inventory.attach_god_effects(state,god,node)
 end
 
 function Inventory.ability(state,name,modifier)
-    local value=state.abilities[name] or (name=="Defence" and state.defence) or (name=="Rank" and state.rank) or 0
-    if modifier=="natural" then return state.models.stats.natural[name] or value end
+    local natural=state.models.stats.natural[name] or state.abilities[name] or (name=="Rank" and state.rank) or 0
+    if name=="Defence" then
+        natural=(state.models.stats.natural.Combat or state.abilities.Combat or 0)+(state.rank or 0)
+    end
+    if modifier=="natural" then return natural end
+    local value=state.abilities[name] or (name=="Rank" and state.rank) or natural
+    if name=="Combat" then
+        local id=state.models.equipment.weapon
+        for _,item in ipairs(state.items) do if item.id==id and item.equipped then value=value+(tonumber(item.bonus) or 0); break end end
+    elseif name=="Defence" then
+        value=natural; local id=state.models.equipment.armour
+        for _,item in ipairs(state.items) do if item.id==id and item.equipped then value=value+(tonumber(item.bonus) or 0); break end end
+    else
+        local best=0
+        for _,item in ipairs(state.items) do if item.kind=="tool" and item.equipped and tostring(item.ability or ""):lower()==name:lower() then best=math.max(best,tonumber(item.bonus) or 0) end end
+        value=value+best
+    end
     for _,effect in ipairs(effects_from(state)) do
         if effect.ability=="*" or tostring(effect.ability or ""):lower()==name:lower() then
             if effect.operation=="target" or effect.target then value=tonumber(effect.value or effect.target) or value
-            elseif effect.operation=="divide" or effect.divide then value=math.floor(value/(tonumber(effect.value or effect.divide) or 1))
+            elseif effect.operation=="divide" or effect.divide then
+                local divisor=tonumber(effect.value or effect.divide) or 1
+                value=value>=0 and math.floor((value+divisor-1)/divisor) or math.ceil(value/divisor)
             else value=value+(tonumber(effect.value or effect.bonus) or 0) end
         end
     end

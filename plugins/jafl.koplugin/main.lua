@@ -1,6 +1,8 @@
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local DataStorage = require("datastorage")
 local LuaSettings = require("luasettings")
+local UIManager = require("ui/uimanager")
+local InfoMessage = require("ui/widget/infomessage")
 local _ = require("gettext")
 
 -- Set up relative path resolution for plugin submodules.
@@ -53,10 +55,14 @@ function JaFL:contentRoot()
 end
 
 function JaFL:open(new_game)
-    local state
+    local state,load_error
 
     if not new_game then
-        state = self.save:load()
+        state,load_error = self.save:load()
+        if load_error then
+            UIManager:show(InfoMessage:new{text=_("Unable to load the saved adventure:\n")..tostring(load_error)})
+            return
+        end
     end
 
     state = state or State.new()

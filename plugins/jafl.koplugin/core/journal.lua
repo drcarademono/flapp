@@ -9,6 +9,12 @@ end
 
 function Journal:draw(sides)
     local rng=self.state.rng
+    if rng.cursor<#rng.draws then
+        rng.cursor=rng.cursor+1
+        local saved=rng.draws[rng.cursor]
+        assert(saved.sides==sides,"saved RNG draw does not match requested die")
+        return saved.value
+    end
     local value=self.source(sides)
     rng.draws[#rng.draws+1]={sides=sides,value=value}
     rng.cursor=#rng.draws
