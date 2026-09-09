@@ -8,7 +8,7 @@ local function empty_models()
         stats={natural={},modifiers={},derived={}}, equipment={weapon=nil,armour=nil,tools={}},
         afflictions={blessings={},curses={},diseases={},poisons={}},
         fleet={active=nil,ships={},location="*land*",next_id=1}, rules={fixed={},temporary={}}, god_effects={}, next_item_id=1, visits={},
-        extra_choices={}, cache_metadata={},
+        extra_choices={}, cache_metadata={}, potions={},
     }
 end
 
@@ -51,6 +51,7 @@ end
 function State.new_effect(values)
     values=State.copy(values or {}); values.kind=values.kind or "aura"; values.operation=values.operation or "add"
     values.uses=values.uses and tonumber(values.uses) or nil
+    values.program=values.program or {}; values.disposable=values.disposable~=false
     return values
 end
 
@@ -113,6 +114,7 @@ function State.validate(s)
     end
     s.models.visits=s.models.visits or {}; s.models.extra_choices=s.models.extra_choices or {}
     s.models.cache_metadata=s.models.cache_metadata or {}
+    s.models.potions=s.models.potions or {}
     s.models.afflictions.blessings=s.blessings; s.models.afflictions.curses=s.curses
     s.models.afflictions.diseases=s.diseases; s.models.afflictions.poisons=s.poisons
     s.models.fleet.ships=s.ships

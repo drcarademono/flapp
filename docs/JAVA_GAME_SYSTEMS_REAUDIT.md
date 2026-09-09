@@ -542,11 +542,20 @@ all game logic. Use this second-pass list for remaining parity work.
   and slots clear on removal, but rule- and purpose-specific behavior remains.
 - [x] Apply selected weapon and best matching equipped-tool bonuses, and match
   Java's upward rounding for positive divided ability effects.
-- [ ] Implement Java effect ordering, rounding, purpose-specific reads, and
-  consumable use-effect programs.
+- [x] Implement Java effect ordering and upward division rounding, purpose-specific
+  `natural`/`noarmour`/`notool` reads, best-tool selection, one-roll potion
+  bonuses, disposable charge handling, and serializable embedded use-effect
+  programs. Executable Lua scenarios now cover ordering and program execution.
 - [ ] Complete set/adjust/tick/gain/lose/price attributes, including interactive
   selections, chance/fatal behavior, tags, titles, caches, and fleet forms.
-- [ ] Implement the full blessing/affliction lifecycle.
+  Item `addtag`, `removetag`, and `addbonus`, and counter-style title mutation
+  attributes are now implemented; the remaining selection/chance/fatal and
+  price variants keep this item open.
+- [ ] Implement the full blessing/affliction lifecycle. Disease/poison immunity,
+  permanent-versus-consumable storage, structured cumulative afflictions, and
+  named/all lifting are now implemented and behavior-tested. Ability/luck/travel
+  reroll prompts, combat defence/divine-wrath activation, and injury prevention
+  remain open.
 
 ### P3 — rolls and combat
 

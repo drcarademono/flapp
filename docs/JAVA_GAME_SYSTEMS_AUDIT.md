@@ -7,6 +7,12 @@
 > re-audit is exhaustive across **all** Java gameplay systems and includes a
 > class/node coverage ledger plus an explicit feature-parity verdict; it is not
 > limited to the Phase-6 work.
+>
+> **Latest checklist update:** effect target/divide/add ordering, embedded
+> serializable item-use programs, potion bonuses, item tag/bonus and counter-title
+> mutations, disease/poison immunity, and structured affliction lifting are now
+> implemented. Blessing-triggered rerolls and combat blessings remain explicitly
+> open in the re-audit rather than being overstated as complete parity.
 
 - **Audit date:** 2026-09-09
 - **Reference implementation:** the Java sources under `flands/`

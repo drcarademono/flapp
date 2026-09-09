@@ -44,13 +44,15 @@ function Inventory.unequip(state,item)
     if item.kind=="tool" then state.models.equipment.tools[item.id]=nil end
 end
 
-local function effects_from(state)
+local function effects_from(state,modifier)
     local out={}
     for _,item in ipairs(state.items) do
         for _,effect in ipairs(item.effects or {}) do
             local active=effect.kind=="aura" or (effect.kind=="wielded" and item.equipped) or
                 (effect.kind=="tool" and item.equipped)
-            if active then out[#out+1]=effect end
+            if modifier=="noarmour" and item.kind=="armour" then active=false end
+            if modifier=="notool" and (item.kind=="tool" or effect.kind=="tool") then active=false end
+            if active then local copy=State.copy(effect); copy._tool=effect.kind=="tool"; out[#out+1]=copy end
         end
     end
     for god,effects in pairs(state.models.god_effects or {}) do if state.gods[god] then
@@ -84,27 +86,51 @@ function Inventory.ability(state,name,modifier)
     end
     if modifier=="natural" then return natural end
     local value=state.abilities[name] or (name=="Rank" and state.rank) or natural
+    local equipment_bonus=0
     if name=="Combat" then
         local id=state.models.equipment.weapon
-        for _,item in ipairs(state.items) do if item.id==id and item.equipped then value=value+(tonumber(item.bonus) or 0); break end end
+        for _,item in ipairs(state.items) do if item.id==id and item.equipped then equipment_bonus=tonumber(item.bonus) or 0; break end end
     elseif name=="Defence" then
         value=natural; local id=state.models.equipment.armour
-        for _,item in ipairs(state.items) do if item.id==id and item.equipped then value=value+(tonumber(item.bonus) or 0); break end end
+        if modifier~="noarmour" then for _,item in ipairs(state.items) do if item.id==id and item.equipped then equipment_bonus=tonumber(item.bonus) or 0; break end end end
     else
         local best=0
-        for _,item in ipairs(state.items) do if item.kind=="tool" and item.equipped and tostring(item.ability or ""):lower()==name:lower() then best=math.max(best,tonumber(item.bonus) or 0) end end
-        value=value+best
+        if modifier~="notool" then for _,item in ipairs(state.items) do if item.kind=="tool" and item.equipped and tostring(item.ability or ""):lower()==name:lower() then best=math.max(best,tonumber(item.bonus) or 0) end end end
+        equipment_bonus=best
     end
-    for _,effect in ipairs(effects_from(state)) do
-        if effect.ability=="*" or tostring(effect.ability or ""):lower()==name:lower() then
+    local effects=effects_from(state,modifier)
+    table.sort(effects,function(left,right)
+        local order={target=1,divide=2,add=3}
+        local lo=order[left.operation] or 3; local ro=order[right.operation] or 3
+        if lo~=ro then return lo<ro end
+        return (tonumber(left.value or left.bonus) or 0)>(tonumber(right.value or right.bonus) or 0)
+    end)
+    local best_tool={}
+    for _,effect in ipairs(effects) do
+        local wildcard=effect.ability=="*" and name~="Defence" and name~="Rank" and name~="Stamina"
+        if wildcard or tostring(effect.ability or ""):lower()==name:lower() then
+            if effect._tool and effect.operation=="add" then
+                best_tool[name]=math.max(best_tool[name] or 0,tonumber(effect.value or effect.bonus) or 0)
+            end
             if effect.operation=="target" or effect.target then value=tonumber(effect.value or effect.target) or value
             elseif effect.operation=="divide" or effect.divide then
                 local divisor=tonumber(effect.value or effect.divide) or 1
                 value=value>=0 and math.floor((value+divisor-1)/divisor) or math.ceil(value/divisor)
-            else value=value+(tonumber(effect.value or effect.bonus) or 0) end
+            elseif not effect._tool then value=value+(tonumber(effect.value or effect.bonus) or 0) end
         end
     end
-    return math.max(0,value)
+    return math.max(0,value+equipment_bonus+(best_tool[name] or 0))
+end
+
+function Inventory.add_potion_bonus(state,ability)
+    -- Java's EffectSet de-duplicates the shared AbilityPotionSource record.
+    state.models.potions[ability]=1
+end
+
+function Inventory.consume_potion_bonus(state,ability)
+    local amount=state.models.potions[ability] or 0
+    state.models.potions[ability]=nil
+    return amount
 end
 
 function Inventory.consume_blessing(state,name)
@@ -115,8 +141,33 @@ function Inventory.consume_blessing(state,name)
     return false
 end
 
+local function blessing_matches(key,value,wanted)
+    local kind=tostring((type(value)=="table" and (value.type or value.name)) or key):lower()
+    wanted=tostring(wanted or ""):lower()
+    if kind=="*" or kind=="?" then return true end
+    if wanted=="poison" then wanted="disease" end
+    if kind:find("poison",1,true) then kind="disease" end
+    return kind==wanted or kind:find(wanted,1,true)~=nil
+end
+
+function Inventory.use_blessing(state,wanted)
+    for key,value in pairs(state.blessings) do if blessing_matches(key,value,wanted) then
+        if type(value)~="table" or not value.permanent then state.blessings[key]=nil end
+        return true,value
+    end end
+    return false
+end
+
+function Inventory.lift(state,kind,name)
+    local collection=state[kind.."s"] or {}; local removed=false
+    if not name or name=="*" then for key in pairs(collection) do collection[key]=nil; removed=true end
+    elseif collection[name] then collection[name]=nil; removed=true end
+    return removed
+end
+
 function Inventory.afflict(state,kind,node)
     local a=node.attr; local key=kind.."s"; local collection=state[key]
+    if (kind=="disease" or kind=="poison") and Inventory.use_blessing(state,"disease") then return false,"blessing" end
     state.models.afflictions[key]=collection
     local effects={}
     for _,child in ipairs(node.children or {}) do if type(child)=="table" and child.name=="effect" then
@@ -131,17 +182,21 @@ function Inventory.afflict(state,kind,node)
         if existing and existing.effects then existing={existing} end
         collection[value.name]=existing or {}; table.insert(collection[value.name],value)
     else collection[value.name]=value end
+    return true,value
 end
 
 function Inventory.bless(state,attributes)
-    local name=attributes.blessing; local value={name=name,type=name,bonus=tonumber(attributes.bonus),permanent=attributes.permanent=="t",effects={}}
+    local name=attributes.blessing; local lower=tostring(name or ""):lower()
+    local value={name=name,type=lower,bonus=tonumber(attributes.bonus),permanent=attributes.permanent=="t" or attributes.permanent=="true",effects={}}
     for _,ability in ipairs(State.ability_names) do if name and name:lower()==ability:lower() then
-        value.type="ability"; value.effects[1]=State.new_effect{kind="aura",ability=ability,operation="add",value=value.bonus or 1}
+        value.type="ability"; value.ability=ability
     end end
-    if name and name:lower():find("defen",1,true) then
-        value.type="defence"; value.effects[1]=State.new_effect{kind="aura",ability="Defence",operation="add",value=value.bonus or 3}
-    end
-    state.blessings[name]=value; state.models.afflictions.blessings=state.blessings
+    if lower:find("disease",1,true) or lower:find("poison",1,true) then value.type="disease" end
+    if lower:find("injury",1,true) then value.type="injury" end
+    if lower:find("defen",1,true) then value.type="defence"; value.bonus=value.bonus or 3 end
+    local previous=state.blessings[name]
+    if not previous or value.permanent or not previous.permanent then state.blessings[name]=value end
+    state.models.afflictions.blessings=state.blessings
     return value
 end
 

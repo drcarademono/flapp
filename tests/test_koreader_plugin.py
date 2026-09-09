@@ -242,6 +242,23 @@ class KOReaderPluginTests(unittest.TestCase):
         section = (ROOT / "book2" / "26.xml").read_text()
         self.assertIn('<random type="travel"/>:', section)
 
+    def test_java_effect_use_and_affliction_semantics_are_executable(self) -> None:
+        inventory = (PLUGIN / "core" / "inventory.lua").read_text()
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        state = (PLUGIN / "core" / "state.lua").read_text()
+        lua_tests = (ROOT / "tests" / "lua" / "run_game_tests.lua").read_text()
+        self.assertIn("table.sort(effects", inventory)
+        self.assertIn("local order={target=1,divide=2,add=3}", inventory)
+        self.assertIn("function Inventory.consume_potion_bonus", inventory)
+        self.assertIn("function Inventory.lift", inventory)
+        self.assertIn('Inventory.use_blessing(state,"disease")', inventory)
+        self.assertIn("function Game:start_use_program", game)
+        self.assertIn('frame.kind=="use_effect"', game)
+        self.assertIn("program=program", game)
+        self.assertIn("values.program=values.program or {}", state)
+        self.assertIn("Java target/divide/add ordering", lua_tests)
+        self.assertIn("embedded use program", lua_tests)
+
     def test_all_resumable_tags_preview_their_trailing_text(self) -> None:
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn("function Game:preview_after(node)", source)

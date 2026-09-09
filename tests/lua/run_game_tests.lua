@@ -2,6 +2,7 @@ local root=assert(arg[1],"repository root argument required")
 package.path=root.."/plugins/jafl.koplugin/?.lua;"..root.."/plugins/jafl.koplugin/?/init.lua;"..root.."/tests/lua/?.lua;"..package.path
 
 local Game=require("core/game")
+local Inventory=require("core/inventory")
 local State=require("core/state")
 local oracle=require("java_oracle")
 
@@ -70,4 +71,36 @@ end
 
 forced_random()
 blocking_combat_hook()
+
+local function effects_and_afflictions()
+    local state=ready_state(); state.abilities.Combat=6; state.models.stats.natural.Combat=6
+    state.items={State.new_item{id="ordered",name="ordered charm",effects={
+        State.new_effect{kind="aura",ability="Combat",operation="add",value=2},
+        State.new_effect{kind="aura",ability="Combat",operation="divide",value=2},
+        State.new_effect{kind="aura",ability="Combat",operation="target",value=10},
+    }}}
+    equal(Inventory.ability(state,"Combat"),7,"Java target/divide/add ordering")
+    Inventory.bless(state,{blessing="disease"})
+    local node={attr={name="ague"},children={}}
+    local applied=Inventory.afflict(state,"disease",node)
+    equal(applied,false,"disease blessing prevents affliction")
+    equal(state.blessings.disease,nil,"non-permanent immunity is consumed")
+    assert(Inventory.afflict(state,"disease",node)); assert(state.diseases.ague)
+    assert(Inventory.lift(state,"disease","ague")); equal(state.diseases.ague,nil,"structured affliction lift")
+end
+
+local function embedded_use_program()
+    local state=ready_state()
+    state.items={State.new_item{id="potion",name="oracle draught",effects={State.new_effect{
+        kind="use",ability="Combat",uses=1,program={{name="set",_path="use.1",attr={var="used",value="9"},children={}}},
+    }}}}
+    local game=Game.new(catalog("forced_random.xml"),state,function() return 4 end)
+    assert(game:load("1","test")); assert(game:choose(action_index(game,"use_item")))
+    equal(state.variables.used,9,"embedded use program")
+    equal(#state.items,0,"disposable exhausted use item")
+    equal(state.models.potions.Combat,1,"ability potion bonus queued")
+end
+
+effects_and_afflictions()
+embedded_use_program()
 io.write("Lua Java-oracle scenarios passed\n")

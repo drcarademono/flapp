@@ -33,9 +33,15 @@ local function item_from(a,node)
         weapon=node_kind=="weapon" or a.weapon, armour=node_kind=="armour" or a.armour, tool=node_kind=="tool" or a.tool }
     item.effects={}
     for _,child in ipairs(node and node.children or {}) do if type(child)=="table" and child.name=="effect" then
+        local program={}; for _,action in ipairs(child.children or {}) do
+            if type(action)=="table" and action.name~="desc" then program[#program+1]=State.copy(action) end
+        end
         item.effects[#item.effects+1]={kind=child.attr.type or "aura",ability=child.attr.ability,
             operation=child.attr.target and "target" or child.attr.divide and "divide" or "add",
-            value=child.attr.bonus or child.attr.divide or child.attr.target,uses=child.attr.uses,text=child.attr.text}
+            value=child.attr.bonus or child.attr.divide or child.attr.target,
+            uses=child.attr.uses or (child.attr.ability and 1 or nil),
+            text=child.attr.text or child.attr.description,verb=child.attr.verb,
+            blessing=child.attr.blessing,disposable=truth(child.attr.disposable,true),program=program}
     end end
     return item
 end
@@ -171,6 +177,15 @@ function Game:mutate(name, a, direction)
     if direction<0 and (a.item=="*" or a.weapon=="*" or a.armour=="*" or a.tool=="*") then
         State.remove_matching_items(s,a)
     end
+    if a.addtag or a.removetag or a.addbonus then
+        for _,item in ipairs(s.items) do if Inventory.matches(item,a) then
+            if a.addtag then item.tags[ tostring(a.addtag):lower() ]=true end
+            if a.removetag then item.tags[ tostring(a.removetag):lower() ]=nil end
+            if a.addbonus then item.bonus=(tonumber(item.bonus) or 0)+self:value(a.addbonus) end
+            break
+        end end
+        return
+    end
     local amount = self:value(a.amount or a.value or a.stamina or 1) * direction
     if a.ship then
         if direction>0 then Ships.new(s,a) else Ships.remove(s,a.ship) end
@@ -199,13 +214,19 @@ function Game:mutate(name, a, direction)
         s.abilities[ability]=math.max(0,math.min(12,(s.abilities[ability] or 0)+amount)); s.models.stats.natural[ability]=s.abilities[ability]
     elseif a.shards or a.gold or name == "adjustmoney" then s.shards = math.max(0, s.shards + self:value(a.shards or a.gold or a.amount) * direction)
     elseif a.codeword then for _,v in ipairs(words(a.codeword)) do s.codewords[v] = direction > 0 or nil end
-    elseif a.title then for _,v in ipairs(words(a.title)) do s.titles[v] = direction > 0 or nil end
+    elseif a.title then
+        for _,v in ipairs(words(a.title)) do
+            if a.titlepattern then
+                local current=tonumber(s.titles[v]) or self:value(a.titlevalue or 1)
+                s.titles[v]=direction>0 and current+self:value(a.titleadjust or a.titaladjust or 1) or nil
+            else s.titles[v] = direction > 0 or nil end
+        end
     elseif a.god then s.gods[a.god] = direction > 0 or nil
     elseif a.flag then s.flags[a.flag] = direction > 0 or nil
     elseif a.blessing then if direction>0 then Inventory.bless(s,a) else s.blessings[a.blessing]=nil end
-    elseif a.curse then s.curses[a.curse]=direction>0 and true or nil
-    elseif a.disease then s.diseases=s.diseases or {}; s.diseases[a.disease]=direction>0 and true or nil
-    elseif a.poison then s.poisons=s.poisons or {}; s.poisons[a.poison]=direction>0 and true or nil
+    elseif a.curse then if direction<0 then Inventory.lift(s,"curse",a.curse) end
+    elseif a.disease then if direction<0 then Inventory.lift(s,"disease",a.disease) end
+    elseif a.poison then if direction<0 then Inventory.lift(s,"poison",a.poison) end
     elseif a.resurrection then s.resurrection=direction>0 and State.copy(a) or nil
     elseif a.item or a.name or a.weapon or a.armour or a.tool then
         local itemname=a.item or a.name or a.weapon or a.armour or a.tool
@@ -270,9 +291,33 @@ function Game:resume_section()
         self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
         local frame=self.state.execution.frames[#self.state.execution.frames]
         if frame then frame.completed=true end
-        self:add_action("Continue combat","combat_continue",{instruction=self.state.combat and self.state.combat.owner})
+        if frame and frame.kind=="use_effect" then
+            self:add_action("Finish using "..(frame.item_name or "item"),"finish_use_effect",{item_id=frame.item_id})
+        else
+            self:add_action("Continue combat","combat_continue",{instruction=self.state.combat and self.state.combat.owner})
+        end
     end
     return finished
+end
+
+function Game:start_use_program(item,effect,reuse_frame)
+    local frame=reuse_frame or {kind="use_effect",item_id=item.id,item_name=item.name,effect=State.copy(effect)}
+    if not reuse_frame then self.state.execution.frames[#self.state.execution.frames+1]=frame end
+    self.nested_outer_runner=self.active_runner or self.section_runner; self.actions={}
+    local runner=coroutine.create(function()
+        for _,child in ipairs(effect.program or {}) do
+            local count,serial=#self.actions,self.pause_serial or 0
+            self:walk(child,true)
+            if #self.actions>count and (self.pause_serial or 0)==serial then self:pause_section() end
+        end
+    end)
+    self.active_runner=runner
+    local ok,err=coroutine.resume(runner); if not ok then error(err) end
+    if coroutine.status(runner)=="dead" then
+        self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
+        table.remove(self.state.execution.frames); return false
+    end
+    return true
 end
 
 local function ability_key(name)
@@ -481,7 +526,23 @@ function Game:open_cache(node,message)
 end
 
 function Game:apply_affliction(kind, node)
-    Inventory.afflict(self.state,kind,node)
+    local applied,reason=Inventory.afflict(self.state,kind,node)
+    if not applied and reason=="blessing" then self.text[#self.text+1]="Your blessing protects you." end
+end
+
+local function find_item(state,id)
+    for index,item in ipairs(state.items) do if item.id==id then return item,index end end
+end
+
+function Game:consume_use_effect(item,effect)
+    if effect.ability then Inventory.add_potion_bonus(self.state,ability_key(effect.ability)) end
+    if effect.blessing then Inventory.use_blessing(self.state,effect.blessing) end
+    if effect.uses and effect.uses>0 then
+        effect.uses=effect.uses-1
+        if effect.uses==0 and effect.disposable~=false then
+            local _,index=find_item(self.state,item.id); if index then table.remove(self.state.items,index) end
+        end
+    end
 end
 
 function Game:resume_pending_check_children()
@@ -997,6 +1058,16 @@ function Game:load(book, section)
             for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
         end
     end
+    local use_frame=self.state.execution.frames[#self.state.execution.frames]
+    if use_frame and use_frame.kind=="use_effect" then
+        self.actions={}
+        if use_frame.completed then
+            self:add_action("Finish using "..(use_frame.item_name or "item"),"finish_use_effect",{item_id=use_frame.item_id})
+        else
+            local item=find_item(self.state,use_frame.item_id) or {id=use_frame.item_id,name=use_frame.item_name}
+            self:start_use_program(item,use_frame.effect,use_frame)
+        end
+    end
     if self.restoring and pending and (pending.resume_kind=="market" or pending.resume_kind=="buy" or pending.resume_kind=="sell") then
         for _,action in ipairs(self.actions) do
             if action.kind=="market" then self:open_market(action.data); break end
@@ -1028,16 +1099,16 @@ function Game:_choose(index)
     elseif action.kind=="use_item" then
         local item=self.state.items[action.data.index]; local effect=item and item.effects[action.data.effect]
         if not effect or effect.uses==0 then return nil,"That effect is no longer available." end
-        local ability=effect.ability and ability_key(effect.ability)
-        if ability and ability~="*" then
-            local value=tonumber(effect.value) or 0
-            if effect.operation=="target" then self.state.abilities[ability]=value
-            elseif effect.operation=="divide" then self.state.abilities[ability]=math.floor((self.state.abilities[ability] or 0)/math.max(1,value))
-            else self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)+value) end
+        self:consume_use_effect(item,effect)
+        if #(effect.program or {})>0 and self:start_use_program(item,effect) then
+            return {title=effect.verb or "Use",text=effect.text or ("Used "..item.name.."."),actions=self.actions,image=self.image}
         end
-        if effect.uses then effect.uses=effect.uses-1 end
-        if effect.uses==0 then for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end end
         return {title="Item used",text=effect.text or ("Used "..item.name.."."),actions=self.actions,image=self.image}
+    elseif action.kind=="finish_use_effect" then
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame and frame.kind=="use_effect" then table.remove(self.state.execution.frames) end
+        self.actions={}; self:resume_section()
+        return {title="Item used",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="mutate" then
         local node=action.data.node
         local attributes=State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end
@@ -1125,7 +1196,7 @@ function Game:_choose(index)
             self.state.variables["*ability*"]="Rank"
         else
             local chosen=action.data.ability or words(a.ability)[1]
-            score=self:ability(chosen)+adjustment
+            score=self:ability(chosen)+adjustment+Inventory.consume_potion_bonus(self.state,ability_key(chosen))
             roll=self:roll(6)+self:roll(6)+score
             success=roll>self:value(a.level)
             description=string.format("%s check: rolled %d against Difficulty %d — %s.",
