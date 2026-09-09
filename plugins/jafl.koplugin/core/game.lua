@@ -1,4 +1,5 @@
 local XML = require("content/xml")
+local Compatibility = require("content/compatibility")
 local State = require("core/state")
 
 local Game = {}; Game.__index = Game
@@ -729,6 +730,8 @@ end
 function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
+    local declared,compatibility_error=pcall(Compatibility.assert_declared,root,tostring(book).."/"..tostring(section))
+    if not declared then return nil,compatibility_error end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.preview_text=nil; self.actions={}; self.steps=0; self.image=nil
     self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
     self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -10,6 +11,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CENSUS = ROOT / "docs" / "koreader-content-census.json"
 TAGS: Counter[str] = Counter()
 ERRORS: list[str] = []
 
@@ -41,6 +43,16 @@ for book in range(1, 7):
 
 if len(TAGS) != 69:
     ERRORS.append(f"content vocabulary changed: expected 69 tags, found {len(TAGS)}")
+
+if CENSUS.is_file():
+    census = json.loads(CENSUS.read_text())
+    expected_counts = {
+        tag: data["count"] for tag, data in census.get("tags", {}).items()
+    }
+    if expected_counts != dict(sorted(TAGS.items())):
+        ERRORS.append("content vocabulary/counts differ from docs/koreader-content-census.json; run tools/generate-koreader-compatibility.py")
+else:
+    ERRORS.append("missing docs/koreader-content-census.json")
 
 print(f"Validated {sum(TAGS.values())} elements across {sum(1 for i in range(1, 7) for _ in (ROOT / f'book{i}').glob('*.xml'))} XML files")
 print(f"Observed {len(TAGS)} tags: {', '.join(sorted(TAGS))}")

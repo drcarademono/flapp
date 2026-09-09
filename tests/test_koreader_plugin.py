@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import unittest
 import zipfile
@@ -13,6 +14,7 @@ class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
                          "core/save.lua", "content/xml.lua", "content/catalog.lua",
+                         "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
 
@@ -289,6 +291,27 @@ class KOReaderPluginTests(unittest.TestCase):
 
     def test_content_validator(self) -> None:
         subprocess.run(["python3", "tools/validate-koreader-content.py"], cwd=ROOT, check=True)
+
+    def test_compatibility_inventory_is_current(self) -> None:
+        subprocess.run(["python3", "tools/generate-koreader-compatibility.py", "--check"], cwd=ROOT, check=True)
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        declarations = (PLUGIN / "content" / "compatibility.lua").read_text()
+        self.assertIn('local Compatibility = require("content/compatibility")', source)
+        self.assertIn("pcall(Compatibility.assert_declared,root", source)
+        self.assertIn("Unsupported XML element", declarations)
+        self.assertIn("Unsupported attribute", declarations)
+
+    def test_java_oracle_covers_every_executable_content_tag(self) -> None:
+        census = json.loads((ROOT / "docs" / "koreader-content-census.json").read_text())
+        oracle = json.loads((ROOT / "tests" / "fixtures" / "java_oracle_game_logic.json").read_text())
+        expected = {tag for tag, data in census["tags"].items() if data["support"] != "presentation"}
+        actual = {case["tag"] for case in oracle["nodes"]}
+        self.assertEqual(expected, actual)
+        self.assertEqual(len(actual), len(oracle["nodes"]), "oracle tags must be unique")
+        blockers = {case["tag"] for case in oracle["continuation_cases"]}
+        self.assertTrue({"goto", "difficulty", "fight", "group", "market", "reroll"} <= blockers)
+        for case in oracle["continuation_cases"]:
+            self.assertIn("reload_expect", case)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

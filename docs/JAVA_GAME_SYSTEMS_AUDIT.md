@@ -527,16 +527,33 @@ semantics have been implemented.
 
 ## 5. Priority plan for parity work
 
-No implementation is part of this audit. The recommended order minimizes the
-risk of building more rules on an inadequate state/save model.
+The checklist below tracks implementation progress. Its recommended order
+minimizes the risk of building more rules on an inadequate state/save model.
 
-### Phase 0 — executable compatibility inventory
+### Phase 0 — executable compatibility inventory — **Complete**
 
-1. Generate a checked-in machine-readable tag/attribute census for books 1–6.
-2. Make the interpreter fail loudly (in a future implementation change) for
-   executable tags/attributes not in a declared support matrix.
-3. Build small Java-oracle fixtures for each executable node, including blocked
-   continuation and save/reload points.
+- [x] Generate a checked-in machine-readable tag/attribute census for books
+  1–6. `docs/koreader-content-census.json` records counts, observed attributes,
+  and the current support classification. The generator has a drift-check mode.
+- [x] Make the interpreter fail loudly for elements or executable attributes
+  outside the declared compatibility boundary. The generated Lua declaration
+  deliberately labels incomplete handlers `partial` or `missing`; declaration
+  means “recognized,” not “parity complete.” This protects new content from
+  silently falling through without pretending existing gaps are fixed.
+- [x] Build a small Java-oracle expectation for every executable content tag.
+  `tests/fixtures/java_oracle_game_logic.json` names the responsible Java class
+  and observable rule, and includes continuation/reload scenarios for goto,
+  checks, fights, groups, markets, and rerolls. Tests enforce complete, unique
+  coverage as the vocabulary changes.
+
+Phase 0 establishes inventory and regression boundaries only. It does not
+change the `partial` and `missing` parity findings above; those remain checklist
+items for subsequent phases.
+
+The generated support inventory currently classifies the 69 observed tags as
+1 implemented, 44 partial, 7 missing, and 17 presentation/template tags. These
+labels are the checklist baseline: completing later work should move entries
+from `partial`/`missing` to `implemented`, with a corresponding oracle test.
 
 ### Phase 1 — state and persistence foundation
 
