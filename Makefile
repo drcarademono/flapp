@@ -2,7 +2,7 @@ books := 1 2 3 4 5 6
 bookZips := $(foreach num,$(books),book$(num).zip)
 illuZips := $(foreach num,$(books),illus$(num).zip)
 
-.PHONY: build clean koreader-plugin check-koreader-content check-koreader-compatibility
+.PHONY: build clean koreader-plugin check-koreader-content check-koreader-compatibility check-koreader-reachability
 
 build: flands.jar $(bookZips) $(illuZips)
 
@@ -23,5 +23,8 @@ check-koreader-content:
 check-koreader-compatibility:
 	python3 tools/generate-koreader-compatibility.py --check
 
-koreader-plugin: check-koreader-content check-koreader-compatibility
+check-koreader-reachability:
+	python3 tools/audit-koreader-reachability.py
+
+koreader-plugin: check-koreader-content check-koreader-compatibility check-koreader-reachability
 	sh tools/package-koreader-plugin.sh

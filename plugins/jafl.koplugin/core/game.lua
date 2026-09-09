@@ -1,9 +1,11 @@
 local XML = require("content/xml")
 local Compatibility = require("content/compatibility")
 local Combat = require("core/combat")
+local Character = require("core/character")
 local Expression = require("core/expression")
 local Inventory = require("core/inventory")
 local Journal = require("core/journal")
+local Rules = require("core/rules")
 local Ships = require("core/ships")
 local State = require("core/state")
 
@@ -45,6 +47,7 @@ end
 
 function Game:roll(sides) return self.journal:draw(sides) end
 function Game:ability(name,modifier) return Inventory.ability(self.state,tostring(name or ""):gsub("^%l",string.upper),modifier) end
+function Game:set_fixed_rules(value) return Rules.set_fixed(self.state,value) end
 
 function Game:value(v)
     if v == nil then return 0 end
@@ -118,7 +121,7 @@ function Game:condition(a)
     if ok and a.poison then ok = s.poisons and s.poisons[a.poison] ~= nil end
     if ok and a.resurrection then ok = s.resurrection ~= nil end
     if ok and a.book then ok = self.catalog.books[tostring(a.book)] and self.catalog.books[tostring(a.book)].installed end
-    if ok and a.rule then ok = self.state.models.rules.fixed[a.rule:lower()] or self.state.models.rules.temporary[a.rule:lower()] end
+    if ok and a.rule then ok = Rules.active(self.state,a.rule) end
     if ok and a.ship then
         ok=#Ships.find(s,a.ship=="*" and nil or a.ship,true)>0
     end
@@ -585,6 +588,8 @@ function Game:walk(node, enabled)
     end
     if not enabled then return end
     if n=="choice" then
+        local visit_key=self.state.book..":"..self.state.section..":"..node._path
+        if self.state.models.visits[visit_key] and not truth(a.revisit,false) then return end
         if self:condition(a) and destination_matches_life_state(self.state,a) and
                 (not a.book or self.catalog.books[a.book] and self.catalog.books[a.book].installed) then
             self:add_action(plain(node),"goto",a)
@@ -612,6 +617,8 @@ function Game:walk(node, enabled)
             self:add_action("Select "..ship.name,"select_ship",{index=index})
         end end
     elseif n=="goto" then
+        local visit_key=self.state.book..":"..self.state.section..":"..node._path
+        if self.state.models.visits[visit_key] and not truth(a.revisit,false) then return end
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
         if self:condition(a) and destination_matches_life_state(self.state,a) then
@@ -639,10 +646,15 @@ function Game:walk(node, enabled)
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Take gain","mutate",{node=node,direction=1}); return end
         self:mutate(n,a,1)
     elseif n=="lose" then
+        if a.flag and not self.state.flags[a.flag] then return end
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Pay cost","mutate",{node=node,direction=-1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
         self:mutate(n,a,-1)
     elseif n=="adjust" then return
+    elseif n=="price" then
+        local cost=self:value(a.shards or a.gold or a.amount or 0)
+        if self.state.shards>=cost then self:add_action(plain(node)~="" and plain(node) or ("Pay "..cost.." Shards"),"pay_price",{node=node,cost=cost}) end
+        return
     elseif n=="adjustmoney" then
         local multiplier=self:value(a.multiply or 1); local cache=a.cache or a.name
         if cache then local target=self.state.caches[cache] or State.new_cache(); self.state.caches[cache]=target; target.shards=math.max(0,target.shards*multiplier)
@@ -804,6 +816,15 @@ function Game:walk(node, enabled)
         if a.remove then list[a.remove]=nil
         elseif a.key then list[a.key]=State.new_extra_choice(a) end
         return
+    elseif n=="field" then
+        local label=a.label or a.text or a.name or "Value"
+        local value=self.state.variables[a.name]
+        if value==nil then value=self.state.codewords[a.name] and 1 or 0 end
+        self.text[#self.text+1]=label..": "..tostring(value)
+        return
+    elseif n=="sectionview" then
+        self.text[#self.text+1]=plain(node).." [Section preview is available in the Java desktop reader only.]"
+        return
     elseif n=="group" and not truth(a.force,true) then
         self:add_action(self:node_text(node) or "Apply grouped action","group",node)
         return
@@ -893,6 +914,7 @@ function Game:load(book, section)
         self.state.pending=nil
     end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.preview_text=nil; self.actions={}; self.steps=0; self.image=nil
+    Rules.enter_book(self.state,self.catalog.books[self.state.book].properties)
     self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil; self.blocking_node=nil
     if not self.restoring then self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil end
     self.pending_checks={}; self.checks_by_var={}
@@ -952,6 +974,13 @@ function Game:_choose(index)
         self.state.progress.applied[node._path]=true
         for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
         return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="pay_price" then
+        local data=action.data
+        if self.state.shards<data.cost then return nil,"You cannot afford that." end
+        self.state.shards=self.state.shards-data.cost
+        if data.node.attr.flag then self.state.flags[data.node.attr.flag]=true end
+        for index,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,index); break end end
+        return {title="Payment made",text="Paid "..data.cost.." Shards.",actions=self.actions,image=self.image}
     elseif action.kind=="rest" then
         local node,a=action.data,action.data.attr
         local cost=self:value(a.shards or 0)
@@ -1066,19 +1095,17 @@ function Game:_choose(index)
         local a=action.data
         if truth(a.pay,a.shards~=nil) then self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0)); if a.item then State.remove_item(self.state,a.item,1) end end
         if a.sail then self.state.at_sea=true; Ships.set_location(self.state,"*sea*") end
-        local starters={Liana={"Wayfarer",2,5,2,3,6,4},Andriel={"Warrior",3,6,2,4,3,2},
-            Chalor={"Mage",2,2,6,1,5,3},Marana={"Rogue",5,4,4,1,2,6},
-            Ignatius={"Priest",4,2,3,6,4,2},Astariel={"Troubadour",6,3,4,3,2,4}}
-        if starters[a.section] and self.state.profession=="" then
-            local p=starters[a.section]; self.state.profession=p[1]; self.state.name=a.section
-            for i,n in ipairs(State.ability_names) do self.state.abilities[n]=p[i+1] end
-            self.state.rank=1; self.state.max_stamina=9; self.state.stamina=9; self.state.shards=16
-            self.state.defence=(self.state.abilities.Combat or 0)+self.state.rank+1
-            State.add_item(self.state,{name="leather jerkin",armour=true,bonus=1})
-            local weapons={Priest="mace",Mage="staff",Rogue="sword",Troubadour="sword",Warrior="battle-axe",Wayfarer="spear"}
-            State.add_item(self.state,{name=weapons[p[1]],weapon=true}); State.add_item(self.state,{name="map"})
+        if self.state.profession=="" then
+            local template,template_error=Character.load(self.catalog,self.state.book)
+            local adventurer=template and Character.find(template,a.section)
+            if adventurer then Character.apply(self.state,template,adventurer)
+            elseif template_error then return nil,template_error end
         end
-        table.insert(self.state.history,{book=self.state.book,section=self.state.section})
+        if a.visit then table.insert(self.state.history,{book=self.state.book,section=self.state.section}) end
+        if action.instruction then
+            local key=self.state.book..":"..self.state.section..":"..action.instruction
+            self.state.models.visits[key]=(self.state.models.visits[key] or 0)+1
+        end
         return self:load(a.book or self.state.book,a.section)
     elseif action.kind=="return" then
         local destination=table.remove(self.state.history)

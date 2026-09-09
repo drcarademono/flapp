@@ -231,7 +231,7 @@
         "text": 2
       },
       "count": 6,
-      "support": "missing"
+      "support": "implemented"
     },
     "fight": {
       "attributes": {
@@ -528,7 +528,7 @@
         "shards": 2
       },
       "count": 2,
-      "support": "missing"
+      "support": "implemented"
     },
     "profession": {
       "attributes": {

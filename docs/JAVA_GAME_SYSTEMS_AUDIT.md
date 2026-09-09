@@ -77,29 +77,26 @@ continuations.
   adventurer XML, with gender and authored starting possessions.
 - Abilities support natural/current values, caps, temporary adjustments,
   dividers, fixed targets, and effect ordering.
-- Character sheet fields can be edited through `<field>` nodes.
+- `<field>` nodes display a named numeric value in a non-editable Swing field.
 
 **KOReader now**
 
 - Holds all six base abilities, Rank, Stamina, a Defence field, profession,
   name, and gender.
-- Offers installed books and reads each `New.xml`, but recognizes six hard-coded
-  destination names to construct a character. It assigns hard-coded scores,
-  Stamina, Shards, armour, weapon, and map.
+- Offers installed books, reads each `New.xml`, and loads that book's
+  `Adventurers.xml` profession scores, named/gendered starters, Rank, Stamina,
+  Shards, armour, profession weapon, and common possessions.
 - Applies simple bounded numeric changes and training increases.
-- Renders `<field>` text but does not implement editable character fields.
+- Renders `<field>` as its label plus the current named variable value, matching
+  the read-only Java control without importing desktop editing UI.
 
 **Still needed**
 
-- Load character templates and starting equipment from book data; remove the
-  dependency on the six English section names.
 - Implement derived Defence and recalculate it whenever COMBAT, Rank, armour,
   blessings, curses, or effects change.
 - Model natural versus modified ability values and the full Java ability-effect
   pipeline. The current cached `state.defence` becomes stale after advancement
   or equipment changes.
-- Implement field editing/selection where the authored new-character documents
-  require it.
 - Confirm Java's rank/Stamina progression. Lua currently increases maximum
   Stamina by the same amount as every Rank gain, which is only one narrow path
   through Java's adjustment code.
@@ -130,8 +127,8 @@ continuations.
 - Extend the expression resolver as model-specific values come online. The Java
   arithmetic grammar and core identifiers are implemented; ship/crew, item
   matching, cache, and natural/modified ability variants depend on later phases.
-- Rule-extension predicates (`ActiveRuleset`), item-group/filter semantics, and
-  exact wildcard/list comparison behavior for every condition type.
+- Item-group/filter semantics and exact wildcard/list comparison behavior for
+  every condition type. Active fixed/temporary rule predicates now work.
 - `<set modifier>`, item/tag/cache/dock setters, and the non-numeric `<adjust>`
   variants. These attributes occur hundreds of times (especially crew).
 - Complete Java group UI semantics for nested optional children and undo remain;
@@ -155,22 +152,25 @@ continuations.
 **KOReader now**
 
 - Supports local/cross-book goto, dead-state gating, basic Shard/item payment,
-  a history stack, return, installed-book checks, and a boolean `at_sea` marker.
-- Catalogs maps and illustrations.
+  visit-only history/return, installed-book checks, and a boolean `at_sea`
+  marker. Used destinations are tracked by stable instruction address; ordinary
+  actions are suppressed when revisiting the source while `revisit="t"` actions
+  remain available.
+- Catalogs maps and illustrations. Fixed rules persist in character state;
+  temporary rules are cleared/reloaded from each active book's `Rules` property.
 
 **Still needed**
 
-- Visit/revisit rules and correct history semantics (including destinations
-  that should not be revisited or returned through).
-- Complete `price`, `currency`, `pay`, `item`, `tags`, sail, dock, and ship
-  transition semantics. Current goto payment removes at most one named item and
-  money, regardless of the Java action rules.
-- Book fixed/temporary rules and rule-dependent mechanics.
+- Complete remaining `price`, `currency`, `pay`, `item`, `tags`, sail, dock, and ship
+  transition variants. Standalone Shard prices and their enabling flags work;
+  goto payment removes at most one named item and money, regardless of the full
+  Java action rules.
 - Death menu routing to each book's configured death section when no authored
   dead goto is present.
 - Match Java's visible acquisition blocker and menu presentation for persistent
   `<extrachoice>` entries; keyed storage/removal and address/tag activation work.
-- `<sectionview>` behavior, if that Java utility is in product scope.
+- `sectionview` is explicitly out of player-runtime scope because it is a Java
+  desktop preview browser; the rationale is recorded in the scope decision.
 
 ### 3.4 Items, equipment, item groups, and effects — **Partial**
 
@@ -481,7 +481,8 @@ presentation, and styled-label details.
 - Structured schema-2 records reserve the inputs needed for derived statistics,
   equipment/effects, afflictions, fleets, rules, visits, extra choices, and cache
   constraints while preserving legacy aliases during the transition.
-- `hardcore` exists only as an unused boolean.
+- Fixed and book-temporary optional rules are active. `hardcore` remains an
+  unused boolean pending a separately specified gameplay policy.
 
 **Still needed**
 
@@ -491,18 +492,18 @@ presentation, and styled-label details.
   their own blocking action.
 - Add broader migration fixtures, explicit save corruption recovery, and make a
   Java-save import decision.
-- Implement or remove exposed hardcore/rule controls until semantics exist.
+- Implement or remove the exposed hardcore control; rules now have runtime
+  semantics, while a future settings UI may expose fixed-rule selection.
 
 ### 3.15 Presentation-linked game facilities — **Partial**
 
 - **Character sheet:** KOReader displays core stats/inventory, but not complete
   effects, typed blessings/afflictions, equipped items, persistent choices, or
   editing/use actions.
-- **Ship sheet:** missing.
+- **Ship sheet:** basic fleet, location, crew, and cargo output is present.
 - **Maps and illustrations:** paths and display exist; Java opens illustrations
   separately while KOReader embeds them, an acceptable design difference.
-- **Rules/help:** content exists, but active optional rules are not connected to
-  game state.
+- **Rules/help:** fixed and book-temporary rules are connected to game state.
 - **Action pagination:** implemented as a KOReader-native accommodation.
 - **Styled text/tables/boxes:** simplified intentionally; see the separate text
   parsing audit. These are not game-rule blockers unless styling communicates
@@ -513,18 +514,18 @@ presentation, and styled-label details.
 | Area | Java elements | KOReader status |
 | --- | --- | --- |
 | Containers/presentation | `section`, `p`, `h1`–`h4`, `b`, `i`, `table`, `tr`, `td`, `header`, `text`, `box`, `choices`, `abilities`, `items` | Parsed/rendered in simplified form. |
-| Branching/navigation | `if`, `elseif`, `else`, `choice`, `goto`, `return`, `while`, `group`, `sectionview` | Common branches/gotos/return work; group/while partial; sectionview missing. |
+| Branching/navigation | `if`, `elseif`, `else`, `choice`, `goto`, `return`, `while`, `group`, `sectionview` | Common branches/gotos/visit-return work; group/while partial; sectionview is explicitly desktop-only. |
 | Rolls | `random`, `difficulty`, `rankcheck`, `outcomes`, `outcome`, `success`, `failure`, `adjust`, `reroll`, `training` | Main checks, ability selection, bounded undo, and reroll work; rare roller and continuation cases remain. |
-| State changes | `set`, `tick`, `gain`, `lose`, `rest`, `price` | Common scalar changes only; optional/interactive and many attribute forms missing. |
+| State changes | `set`, `tick`, `gain`, `lose`, `rest`, `price` | Common scalar and standalone Shard-price actions work; optional/interactive and uncommon attribute forms remain partial. |
 | Items/effects | `item`, `weapon`, `armour`, `tool`, `effect`, `include`, `exclude`, `itemcache`, `moneycache`, `transfer` | Basic inventory and narrow transfer only; equipment/effects/filter/cache UI missing. |
 | Afflictions/death | `curse`, `disease`, `poison`, `resurrection` | Name storage/basic resurrection only. |
 | Combat | `fight`, `fightround`, `fightdamage`, `flee` | Serializable interactive/grouped combat, ordinary hooks, flee, stalemate skip, common modifiers, blessings, and reroll work; blocking hooks remain partial. |
 | Commerce/ships | `market`, `trade`, `buy`, `sell`, `sold`, `tradeevent`, `adjustmoney` | Basic item market only; ship/cargo/crew/events/cache money math missing. |
-| Persistent/UI actions | `extrachoice`, `field`, `image` | Image works; extra choice and field behavior missing. |
-| Character templates | `adventurers`, `adventurer`, `profession`, `rank`, `stamina`, `gold` | Bypassed by hard-coded starter construction. |
+| Persistent/UI actions | `extrachoice`, `field`, `image` | Image and read-only field values work; extra-choice presentation remains partial. |
+| Character templates | `adventurers`, `adventurer`, `profession`, `rank`, `stamina`, `gold` | Book-specific starters, statistics, gender, and possessions are data-driven. |
 
-`exclude`, `include`, `sold`, `price`, `sectionview`, `field`, and character
-template elements deserve explicit handlers even though generic recursion makes
+`exclude`, `include`, and `sold` deserve explicit handlers even though
+generic recursion makes
 them appear “accepted.” Silently walking an element is not proof its Java
 semantics have been implemented.
 
@@ -554,7 +555,7 @@ change the `partial` and `missing` parity findings above; those remain checklist
 items for subsequent phases.
 
 The generated support inventory currently classifies the 69 observed tags as
-1 implemented, 48 partial, 3 missing, and 17 presentation/template tags. These
+3 implemented, 48 partial, 1 missing, and 17 presentation/template tags. These
 labels are the checklist baseline: completing later work should move entries
 from `partial`/`missing` to `implemented`, with a corresponding oracle test.
 
@@ -658,15 +659,22 @@ Phase 5 establishes the combat/roll engine, but remains intentionally checked as
 open because blocking hook programs occur in authored content. Rare loss-node
 rollers remain recorded as a separate reroll follow-up above.
 
-### Phase 6 — data-driven creation, rules, and completeness gate
+### Phase 6 — data-driven creation, rules, and completeness gate — **Complete**
 
-1. Parse the book character templates and remove hard-coded starters.
-2. Activate fixed/temporary optional rules and finish visit/revisit semantics.
-3. Decide whether section browsing and editable fields are player scope or
-   documented Java-only tools.
-4. Run automated reachability/parity coverage over all six books. Do not claim
-   full playability while any reachable executable construct falls through a
-   generic container path.
+- [x] Parse each selected book's `Adventurers.xml`; create the named adventurer
+  with authored profession scores, gender, Rank, Stamina, money, and possessions;
+  remove the hard-coded book-1 starter table.
+- [x] Activate normalized saved fixed rules and per-book temporary rules, and
+  limit return-history entries to authored `visit` destinations.
+- [x] Record product-scope decisions: `sectionview` remains a clearly labelled
+  desktop-only preview facility, while read-only `<field>` values render inline.
+- [x] Add a six-book reachability gate. Starting at every `New.xml`, it follows
+  installed-book destinations, fails on missing sections, and fails when a
+  reachable executable tag has no explicit runtime dispatch. The current scan
+  reaches 4,405 sections with no missing destination or dispatch gap.
+
+Phase 6 completes the planned foundation and makes remaining partial behavior
+explicit; it does not redefine the partial systems above as full Java parity.
 
 ## 6. Highest-risk current mismatches
 
@@ -685,8 +693,9 @@ These should be treated as correctness defects rather than polish:
    interactive combat sub-state and add broader migration/corruption fixtures.
 7. **Extra-choice presentation differs:** routes work, but visible acquisition
    does not yet reproduce Java's blocking/menu behavior.
-8. **Silent fallback:** some declared partial executable semantics are recursed or
-   ignored rather than surfaced.
+8. **Partial dispatch is not full parity:** the reachability gate prevents a
+   reachable executable tag from falling through without explicit dispatch, but
+   attributes classified `partial` can still implement only their common forms.
 
 ## 7. Java-reference caveats
 

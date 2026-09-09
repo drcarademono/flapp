@@ -4,6 +4,7 @@ import json
 import subprocess
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +14,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "core/combat.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "core/ships.lua", "core/combat.lua", "core/character.lua", "core/rules.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -386,6 +387,24 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("self.fight_groups", game)
         self.assertIn("self.flee_choices", game)
         self.assertIn('inventory.consume_blessing', combat)
+
+    def test_phase_six_creation_rules_and_completeness_gate(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        character = (PLUGIN / "core" / "character.lua").read_text()
+        rules = (PLUGIN / "core" / "rules.lua").read_text()
+        self.assertIn("function Character.load", character)
+        self.assertIn("function Character.apply", character)
+        self.assertIn("Character.load(self.catalog,self.state.book)", game)
+        self.assertNotIn("local starters=", game)
+        for function in ("set_fixed", "enter_book", "active"):
+            self.assertIn("function Rules." + function, rules)
+        self.assertIn('elseif n=="field"', game)
+        self.assertIn('elseif n=="sectionview"', game)
+        for book in range(1, 7):
+            root = ET.parse(ROOT / f"book{book}" / "Adventurers.xml").getroot()
+            self.assertEqual(6, len(root.findall("./abilities/profession")))
+            self.assertEqual(6, len(root.findall("./starting/adventurer")))
+        subprocess.run(["python3", "tools/audit-koreader-reachability.py"], cwd=ROOT, check=True)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

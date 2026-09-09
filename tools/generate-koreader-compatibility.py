@@ -17,8 +17,8 @@ PRESENTATION = {
     "gold", "h1", "h2", "h3", "h4", "header", "i", "items", "p", "profession",
     "rank", "section", "stamina", "starting", "table", "td", "text", "tr",
 }
-MISSING = {"field", "price", "sectionview"}
-IMPLEMENTED = {"image"}
+MISSING = {"sectionview"}
+IMPLEMENTED = {"field", "image", "price"}
 
 
 def lua_quote(value: str) -> str:

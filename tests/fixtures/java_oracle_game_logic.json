@@ -16,7 +16,7 @@
     {"tag":"exclude", "java":"ItemFilterNode", "expect":"Exclude matching item groups or attributes from the enclosing item operation."},
     {"tag":"extrachoice", "java":"ExtraChoice", "expect":"Block while visibly acquiring a new keyed choice; persist it and activate it only at its configured address or section tag."},
     {"tag":"failure", "java":"DifficultyResultNode", "expect":"Execute only for a failed associated check and preserve nested continuation."},
-    {"tag":"field", "java":"FieldNode", "expect":"Bind an editable document field to the named adventurer property."},
+    {"tag":"field", "java":"FieldNode", "expect":"Display the current value of the named codeword/variable in a non-editable document field."},
     {"tag":"fight", "java":"FightNode", "expect":"Block and preserve round, opponent, damage-hook, flee, and undo state until combat ends."},
     {"tag":"fightdamage", "java":"FightNode.DamageNode", "expect":"Run the paired fight hook after damage and replace normal damage when configured."},
     {"tag":"fightround", "java":"FightNode.RoundNode", "expect":"Run the paired hook before combat or after each completed round as configured."},
