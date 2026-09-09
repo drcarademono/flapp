@@ -1,5 +1,7 @@
 # Java game systems second-pass audit
 
+> **Active delivery plan:** [`KOREADER_JAVA_PARITY_PLAN.md`](KOREADER_JAVA_PARITY_PLAN.md) is the authoritative plan for reaching full Java gameplay parity. This document remains the evidence inventory and historical re-audit.
+
 - **Re-audit date:** 2026-09-09
 - **Reference:** `flands/*.java`, books 1–6, and their `Adventurers.xml` files
 - **Port checked:** `plugins/jafl.koplugin/` at commit `b77cabc`

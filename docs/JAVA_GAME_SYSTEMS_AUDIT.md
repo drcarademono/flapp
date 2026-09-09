@@ -1,5 +1,10 @@
 # Java game systems audit and KOReader parity plan
 
+> **Active delivery plan:** use
+> [`KOREADER_JAVA_PARITY_PLAN.md`](KOREADER_JAVA_PARITY_PLAN.md) to drive the
+> remaining work to full Java gameplay parity. This document is retained as the
+> original audit and historical phase plan.
+
 > **Second-pass status:** This original phase audit is retained as the historical
 > implementation checklist. The independent post-Phase-6 verification in
 > [`JAVA_GAME_SYSTEMS_REAUDIT.md`](JAVA_GAME_SYSTEMS_REAUDIT.md) supersedes its
