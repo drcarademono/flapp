@@ -13,7 +13,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -309,9 +309,25 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertEqual(expected, actual)
         self.assertEqual(len(actual), len(oracle["nodes"]), "oracle tags must be unique")
         blockers = {case["tag"] for case in oracle["continuation_cases"]}
-        self.assertTrue({"goto", "difficulty", "fight", "group", "market", "reroll"} <= blockers)
+        self.assertTrue({"goto", "difficulty", "random", "rankcheck", "training", "fight", "group",
+                         "market", "reroll", "return", "rest", "resurrection", "transfer", "lose", "tick"} <= blockers)
         for case in oracle["continuation_cases"]:
             self.assertIn("reload_expect", case)
+
+    def test_phase_one_state_and_persistence_foundation(self) -> None:
+        state = (PLUGIN / "core" / "state.lua").read_text()
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        journal = (PLUGIN / "core" / "journal.lua").read_text()
+        self.assertIn("schema = 2", state)
+        self.assertIn("function State.migrate", state)
+        for constructor in ("new_item", "new_effect", "new_affliction", "new_ship", "new_cache", "new_extra_choice"):
+            self.assertIn("function State." + constructor, state)
+        self.assertIn("node._path=path", game)
+        self.assertIn("progress.completed", game)
+        self.assertIn("progress.applied", game)
+        self.assertIn("function Journal:draw", journal)
+        self.assertIn("function Journal:rollback", journal)
+        self.assertNotIn("self.random(", game)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

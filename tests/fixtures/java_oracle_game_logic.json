@@ -58,9 +58,18 @@
   "continuation_cases": [
     {"name":"forced-goto", "tag":"goto", "before":"tick codeword=Before", "block":"goto force=t", "after":"tick codeword=After", "reload_expect":"Before remains set, After remains unset, and the goto is still actionable."},
     {"name":"forced-check", "tag":"difficulty", "before":"set var=marker value=1", "block":"difficulty force=t", "after":"set var=marker value=2", "reload_expect":"marker remains 1 and the same unresolved check is actionable."},
+    {"name":"forced-random", "tag":"random", "before":"tick codeword=Before", "block":"random force=t", "after":"tick codeword=After", "reload_expect":"the authored random action is restored without repeating Before."},
+    {"name":"rank-check", "tag":"rankcheck", "before":"set var=marker value=1", "block":"rankcheck", "after":"set var=marker value=2", "reload_expect":"the unresolved Rank roll and marker=1 are restored."},
+    {"name":"training", "tag":"training", "before":"set var=marker value=1", "block":"training", "after":"set var=marker value=2", "reload_expect":"training remains actionable and no ability increase has happened early."},
     {"name":"fight-round", "tag":"fight", "before":"set var=marker value=1", "block":"fight", "after":"set var=marker value=2", "reload_expect":"enemy/player Stamina, round, active opponent, and marker=1 are restored."},
     {"name":"group-child", "tag":"group", "before":"set var=marker value=1", "block":"forced child loss", "after":"set var=marker value=2", "reload_expect":"the group resumes at the blocked child without replaying marker setup."},
     {"name":"market", "tag":"market", "before":"set var=marker value=1", "block":"market transaction table", "after":"set var=marker value=2", "reload_expect":"the live market is restored; leaving applies marker=2 exactly once."},
-    {"name":"reroll", "tag":"reroll", "before":"completed Roller with mutation", "block":"reroll", "after":"section continuation", "reload_expect":"the prior roll and its reversible mutation remain available to undo and repeat."}
+    {"name":"reroll", "tag":"reroll", "before":"completed Roller with mutation", "block":"reroll", "after":"section continuation", "reload_expect":"the prior roll and its reversible mutation remain available to undo and repeat."},
+    {"name":"return", "tag":"return", "before":"set var=marker value=1", "block":"return force=t", "after":"set var=marker value=2", "reload_expect":"the same return destination is actionable without replaying marker setup."},
+    {"name":"rest", "tag":"rest", "before":"set var=marker value=1", "block":"paid rest", "after":"set var=marker value=2", "reload_expect":"payment and healing have not occurred before the restored action is selected."},
+    {"name":"resurrection", "tag":"resurrection", "before":"set var=marker value=1", "block":"arrange resurrection", "after":"set var=marker value=2", "reload_expect":"the arrangement remains actionable and has not been acquired early."},
+    {"name":"transfer", "tag":"transfer", "before":"set var=marker value=1", "block":"selected item transfer", "after":"set var=marker value=2", "reload_expect":"source and target inventories remain unchanged until selection."},
+    {"name":"selective-loss", "tag":"lose", "before":"set var=marker value=1", "block":"select eligible loss", "after":"set var=marker value=2", "reload_expect":"the selection is restored with no item removed twice."},
+    {"name":"optional-tick", "tag":"tick", "before":"set var=marker value=1", "block":"optional tick", "after":"set var=marker value=2", "reload_expect":"the optional action remains available and its mutation is not duplicated."}
   ]
 }

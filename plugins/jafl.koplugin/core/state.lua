@@ -3,14 +3,80 @@ local State = {}
 State.professions = { Priest = true, Mage = true, Rogue = true, Troubadour = true, Warrior = true, Wayfarer = true }
 State.ability_names = { "Charisma", "Combat", "Magic", "Sanctity", "Scouting", "Thievery" }
 
+local function empty_models()
+    return {
+        stats={natural={},modifiers={},derived={}}, equipment={weapon=nil,armour=nil,tools={}},
+        afflictions={blessings={},curses={},diseases={},poisons={}},
+        fleet={active=nil,ships={}}, rules={fixed={},temporary={}}, visits={},
+        extra_choices={}, cache_metadata={},
+    }
+end
+
 function State.new()
     return {
-        schema = 1, name = "", profession = "", gender = "m", book = "1", section = "New",
+        schema = 2, name = "", profession = "", gender = "m", book = "1", section = "New",
         abilities = {}, stamina = 0, max_stamina = 0, rank = 1, defence = 0, shards = 0,
         ticks = 0, items = {}, codewords = {}, flags = {}, titles = {}, gods = {},
         blessings = {}, curses = {}, diseases = {}, poisons = {}, ships = {}, caches = {}, variables = {}, history = {},
-        pending = nil, hardcore = false,
+        pending = nil, progress=nil, rng={draws={},cursor=0}, models=empty_models(), hardcore = false,
     }
+end
+
+function State.replace(target,source)
+    for key in pairs(target) do target[key]=nil end
+    for key,value in pairs(State.copy(source)) do target[key]=value end
+    return target
+end
+
+function State.migrate(s)
+    local schema=tonumber(s.schema) or 1
+    assert(schema<=2,"unsupported save schema")
+    if schema==1 then
+        s.schema=2
+        s.models=empty_models()
+        s.rng={draws={},cursor=0}
+        s.progress=nil
+    end
+    return s
+end
+
+function State.new_item(values)
+    values=State.copy(values or {}); values.kind=values.kind or values.type or
+        (values.weapon and "weapon") or (values.armour and "armour") or (values.tool and "tool") or "item"
+    values.name=values.name or "unknown item"; values.quantity=tonumber(values.quantity) or 1
+    values.tags=values.tags or {}; values.effects=values.effects or {}; values.equipped=values.equipped==true
+    return values
+end
+
+function State.new_effect(values)
+    values=State.copy(values or {}); values.kind=values.kind or "aura"; values.operation=values.operation or "add"
+    values.uses=values.uses and tonumber(values.uses) or nil
+    return values
+end
+
+function State.new_affliction(kind,values)
+    values=State.copy(values or {}); values.kind=kind; values.name=values.name or kind
+    values.effects=values.effects or {}; values.cumulative=values.cumulative==true
+    return values
+end
+
+function State.new_ship(values)
+    values=State.copy(values or {}); values.id=values.id or tostring(values.name or "ship")
+    values.cargo=values.cargo or {}; values.crew=values.crew or {quality=0}; values.location=values.location or ""
+    return values
+end
+
+function State.new_cache(values)
+    values=State.copy(values or {}); values.items=values.items or {}; values.shards=tonumber(values.shards) or 0
+    values.rules=values.rules or {maximum=nil,multiples=nil,withdraw_charge=0,item_limit=nil,include={},exclude={}}
+    return values
+end
+
+function State.new_extra_choice(values)
+    values=State.copy(values or {}); assert(values.key,"extra choice requires key")
+    values.destination=values.destination or {book=values.book,section=values.section}
+    values.activation=values.activation or {book=values.atbook,section=values.atsection,tag=values.tag}
+    return values
 end
 
 function State.copy(value, seen)
@@ -22,12 +88,31 @@ function State.copy(value, seen)
 end
 
 function State.validate(s)
-    assert(type(s) == "table" and s.schema == 1, "unsupported save schema")
+    assert(type(s) == "table", "invalid save")
+    State.migrate(s)
+    assert(s.schema == 2, "unsupported save schema")
     assert(type(s.book) == "string" and type(s.section) == "string", "invalid address")
     assert(type(s.abilities) == "table" and type(s.items) == "table", "invalid character")
     assert(type(s.variables) == "table" and type(s.flags) == "table", "invalid game state")
     assert(type(s.shards) == "number" and type(s.stamina) == "number", "invalid numeric state")
     s.diseases=s.diseases or {}; s.poisons=s.poisons or {}; s.caches=s.caches or {}; s.history=s.history or {}
+    s.models=s.models or empty_models(); s.rng=s.rng or {draws={},cursor=0}
+    s.models.stats=s.models.stats or {natural={},modifiers={},derived={}}
+    s.models.equipment=s.models.equipment or {weapon=nil,armour=nil,tools={}}
+    s.models.afflictions=s.models.afflictions or {blessings={},curses={},diseases={},poisons={}}
+    s.models.fleet=s.models.fleet or {active=nil,ships={}}
+    s.models.rules=s.models.rules or {fixed={},temporary={}}
+    s.models.visits=s.models.visits or {}; s.models.extra_choices=s.models.extra_choices or {}
+    s.models.cache_metadata=s.models.cache_metadata or {}
+    s.models.afflictions.blessings=s.blessings; s.models.afflictions.curses=s.curses
+    s.models.afflictions.diseases=s.diseases; s.models.afflictions.poisons=s.poisons
+    s.models.fleet.ships=s.ships
+    for _,name in ipairs(State.ability_names) do
+        if s.models.stats.natural[name]==nil then s.models.stats.natural[name]=s.abilities[name] end
+    end
+    if s.progress then
+        s.progress.applied=s.progress.applied or {}; s.progress.completed=s.progress.completed or {}
+    end
     return s
 end
 
@@ -66,7 +151,7 @@ function State.remove_matching_items(s, a, count)
 end
 
 function State.add_item(s, item)
-    item = State.copy(item); item.name = item.name or "unknown item"; item.quantity = item.quantity or 1
+    item = State.new_item(item)
     table.insert(s.items, item)
 end
 

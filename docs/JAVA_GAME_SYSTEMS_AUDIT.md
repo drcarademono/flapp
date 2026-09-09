@@ -472,22 +472,27 @@ ordinary text is not equivalent.
 
 **KOReader now**
 
-- Uses `LuaSettings` with a schema check and atomicity delegated to KOReader.
-  The UI autosaves after screens. Base state collections are serializable.
-- `state.pending` records only `{kind="section", book, section}`. Loading a save
-  reloads the section from its beginning; the coroutine, action, roll, market,
-  cache, and combat state are not serialized. A reload can therefore repeat
-  mutations or lose an unresolved interaction.
+- Uses schema-2 `LuaSettings` saves, validates and migrates schema-1 data, and
+  delegates atomic file replacement to KOReader. The UI autosaves after screens.
+- Parsed nodes receive stable instruction paths. The save records the current
+  instruction plus per-section applied-mutation and completed-blocker sets, so
+  reconstruction does not repeat earlier effects and stops at the same blocker.
+- Random draws are journaled, and each player action is transactional: an error
+  restores the complete state from before the action. Markets retain their
+  transaction view across reconstruction.
+- Structured schema-2 records reserve the inputs needed for derived statistics,
+  equipment/effects, afflictions, fleets, rules, visits, extra choices, and cache
+  constraints while preserving legacy aliases during the transition.
 - `hardcore` exists only as an unused boolean.
 
 **Still needed**
 
-- A versioned continuation/checkpoint model that safely restores the exact
-  pending interaction without replaying earlier effects.
-- Persist full ships, item/effect state, afflictions, resurrection, extra choices,
-  cache constraints, visited state, active rules, derived-stat inputs, last-roll
-  undo data, and in-progress combat.
-- Schema migrations, save corruption/recovery behavior, and Java import decision.
+- Populate and consume the structured records as their engines are implemented;
+  model availability is not feature parity.
+- Persist an interactive, round-by-round combat once Phase 5 replaces the
+  current atomic whole-fight resolver.
+- Add broader migration fixtures, explicit save corruption recovery, and make a
+  Java-save import decision.
 - Implement or remove exposed hardcore/rule controls until semantics exist.
 
 ### 3.15 Presentation-linked game facilities — **Partial**
@@ -555,15 +560,28 @@ The generated support inventory currently classifies the 69 observed tags as
 labels are the checklist baseline: completing later work should move entries
 from `partial`/`missing` to `implemented`, with a corresponding oracle test.
 
-### Phase 1 — state and persistence foundation
+### Phase 1 — state and persistence foundation — **Complete**
 
-1. Define structured models for abilities/derived stats, item instances/effects,
-   typed blessings/afflictions, ships/cargo, rules, visits, extra choices, and
-   caches.
-2. Design versioned serialization and migrations.
-3. Replace coroutine-only progress with serializable instruction/checkpoint
-   identity; add exact resume tests after every blocker.
-4. Add deterministic RNG/roll records and reversible mutation transactions.
+- [x] Define structured model records for natural/modified/derived statistics,
+  equipment, item effects, typed afflictions, ships/cargo/crew, fixed and
+  temporary rules, visits, persistent extra choices, and cache constraints.
+  Compatibility aliases remain in schema 2 while later phases move individual
+  rules onto these records.
+- [x] Version serialization and migrations. Schema-1 saves migrate in memory to
+  schema 2; new nested collections and the RNG journal receive safe defaults,
+  and future schemas fail validation rather than loading partially.
+- [x] Give parsed instructions stable tree paths and persist per-section applied
+  and completed instruction sets. Reload reconstructs the section while
+  suppressing already-applied mutations and resolved blockers, preserving the
+  current blocker. Market transaction views are restored as market views.
+- [x] Route all engine randomness through a persisted draw journal and wrap
+  player actions in reversible state transactions. Invalid actions and runtime
+  failures restore the complete pre-action state rather than leaving partial
+  payment, inventory, or roll changes.
+
+Phase 1 supplies persistence primitives; it does not imply that the later ship,
+effect, cache, or rules engines are implemented. Their model records are dormant
+until the corresponding checklist phases use them.
 
 ### Phase 2 — expressions and generic actions
 

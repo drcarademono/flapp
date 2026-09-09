@@ -1,5 +1,6 @@
 local XML = require("content/xml")
 local Compatibility = require("content/compatibility")
+local Journal = require("core/journal")
 local State = require("core/state")
 
 local Game = {}; Game.__index = Game
@@ -25,9 +26,13 @@ local function item_from(a)
 end
 
 function Game.new(catalog, state, random)
-    return setmetatable({ catalog=catalog, state=state or State.new(), random=random or math.random,
+    local game=setmetatable({ catalog=catalog, state=state or State.new(),
         text={}, actions={}, errors={}, steps=0 }, Game)
+    game.journal=Journal.new(game.state,random)
+    return game
 end
+
+function Game:roll(sides) return self.journal:draw(sides) end
 
 function Game:value(v)
     if v == nil then return 0 end
@@ -43,7 +48,7 @@ function Game:value(v)
     local dice, sides, add = v:match("^(%d+)[dD](%d+)([+-]?%d*)$")
     if dice then
         local total = tonumber(add) or 0
-        for _=1,tonumber(dice) do total = total + self.random(tonumber(sides)) end
+        for _=1,tonumber(dice) do total = total + self:roll(tonumber(sides)) end
         return total
     end
     return 0
@@ -144,8 +149,13 @@ function Game:mutate(name, a, direction)
 end
 
 function Game:add_action(label, kind, data)
-    local action = { label=label, kind=kind, data=data }
+    local source=type(data)=="table" and (data.node or data.market or (data.name and data.children and data)) or nil
+    local action = { label=label, kind=kind, data=data, instruction=source and source._path or self.current_node and self.current_node._path }
     self.actions[#self.actions+1] = action
+    if kind=="skillcheck" or kind=="random" or kind=="fight" or kind=="training" or kind=="goto" or
+            kind=="market" or kind=="return" or kind=="resurrection" then
+        self.blocking_node=source or self.current_node
+    end
     return action
 end
 
@@ -166,7 +176,16 @@ function Game:pause_section()
     -- KOReader uses LuaJIT, whose optional second coroutine.running() result is
     -- not portable across its Lua 5.1/5.2 compatibility configurations.  The
     -- runner identity is unambiguous and works in every supported build.
-    if running and running==self.section_runner then coroutine.yield() end
+    if running and running==self.section_runner then
+        local node=self.blocking_node or self.current_node
+        self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,
+            instruction=node and node._path or nil,actions={}}
+        for _,action in ipairs(self.actions) do
+            self.state.pending.actions[#self.state.pending.actions+1]={kind=action.kind,label=action.label,
+                instruction=action.instruction}
+        end
+        coroutine.yield()
+    end
 end
 
 function Game:resume_section()
@@ -182,7 +201,7 @@ end
 
 local function roll_dice(game, count)
     local total = 0
-    for _=1,count do total = total + game.random(6) end
+    for _=1,count do total = total + game:roll(6) end
     return total
 end
 
@@ -205,16 +224,19 @@ end
 
 local function pair_fight_nodes(root)
     local fights,damage,rounds,flees={},{},{},{}
-    local function visit(node,parent,index)
+    local function visit(node,parent,index,path)
         if type(node)~="table" then return end
         node._parent,node._index=parent,index
+        node._path=path or "1"
         if node.name=="fight" then fights[#fights+1]=node
         elseif node.name=="fightdamage" then damage[#damage+1]=node
         elseif node.name=="fightround" then rounds[#rounds+1]=node
         elseif node.name=="flee" then flees[#flees+1]=node end
-        for child_index,child in ipairs(node.children or {}) do visit(child,node,child_index) end
+        for child_index,child in ipairs(node.children or {}) do
+            if type(child)=="table" then visit(child,node,child_index,(path or "1").."."..child_index) end
+        end
     end
-    visit(root,nil,nil)
+    visit(root,nil,nil,"1")
     for i,fight in ipairs(fights) do
         fight.fightdamage=damage[i]; fight.fightround=rounds[i]; fight.flee_node=flees[i]
     end
@@ -472,7 +494,15 @@ end
 function Game:walk(node, enabled)
     self.steps=self.steps+1; if self.steps > 10000 then error("section execution limit exceeded") end
     if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=normalize_text(node) end return end
+    self.current_node=node
     local n,a=node.name,node.attr
+    local blocker=n=="goto" or n=="random" or n=="difficulty" or n=="rankcheck" or n=="reroll" or n=="fight" or
+        n=="return" or n=="training" or n=="market" or n=="trade" or n=="resurrection" or n=="group"
+    if blocker and self.restoring and self.state.progress.completed[node._path] then return end
+    local mutation=n=="set" or n=="tick" or n=="gain" or n=="lose" or n=="adjust" or
+        n=="adjustmoney" or n=="rest" or n=="transfer" or n=="curse" or n=="disease" or n=="poison"
+    if mutation and self.restoring and self.state.progress.applied[node._path] then return end
+    if mutation then self.state.progress.applied[node._path]=true end
     if n=="if" or n=="elseif" then enabled=enabled and self:condition(a)
     elseif n=="else" then enabled=enabled -- grouped else parity is handled by authored mutually-exclusive blocks where possible
     end
@@ -732,19 +762,32 @@ function Game:load(book, section)
     local root,xerr=XML.read(path); if not root then return nil,xerr end
     local declared,compatibility_error=pcall(Compatibility.assert_declared,root,tostring(book).."/"..tostring(section))
     if not declared then return nil,compatibility_error end
+    local pending=self.state.pending
+    self.restoring=pending and pending.kind=="interaction" and pending.book==tostring(book) and pending.section==tostring(section) and self.state.progress~=nil
+    if not self.restoring then
+        self.state.progress={schema=1,book=tostring(book),section=tostring(section),applied={},completed={}}
+        self.state.pending=nil
+    end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.preview_text=nil; self.actions={}; self.steps=0; self.image=nil
-    self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
-    self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil
+    self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil; self.blocking_node=nil
+    if not self.restoring then self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil end
     self.pending_checks={}; self.checks_by_var={}
     pair_fight_nodes(root)
     self.section_runner=coroutine.create(function() self:walk(root,true) end)
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
-    self.state.pending={kind="section",book=self.state.book,section=self.state.section}
+    if self.restoring and pending and (pending.resume_kind=="market" or pending.resume_kind=="buy" or pending.resume_kind=="sell") then
+        for _,action in ipairs(self.actions) do
+            if action.kind=="market" then self:open_market(action.data); break end
+        end
+    end
+    if not self.state.pending then
+        self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,instruction=nil,actions={}}
+    end
     return { title=(self.catalog.books[self.state.book].title or "").." — "..self.state.section,
         text=self:visible_text():gsub("[ \t]+\n","\n"):match("^%s*(.-)%s*$"), actions=self.actions, image=self.image }
 end
 
-function Game:choose(index)
+function Game:_choose(index)
     local action=self.actions[index]; if not action then return nil,"Invalid choice" end
     self.preview_text=nil
     if action.kind=="startbook" then
@@ -757,7 +800,7 @@ function Game:choose(index)
         if node.name=="rankcheck" then
             local dice=tonumber(a.dice) or 1
             roll=self:value(a.add or 0)+adjustment
-            for _=1,dice do roll=roll+self.random(6) end
+            for _=1,dice do roll=roll+self:roll(6) end
             score=self.state.rank
             success=roll<=score
             description=string.format("Rank check: rolled %d against Rank %d — %s.",roll,score,success and "success" or "failure")
@@ -765,7 +808,7 @@ function Game:choose(index)
         else
             local chosen=action.data.ability or words(a.ability)[1]
             score=(self.state.abilities[ability_key(chosen)] or 0)+adjustment
-            roll=self.random(6)+self.random(6)+score
+            roll=self:roll(6)+self:roll(6)+score
             success=roll>self:value(a.level)
             description=string.format("%s check: rolled %d against Difficulty %d — %s.",
                 ability_key(chosen),roll,self:value(a.level),success and "success" or "failure")
@@ -888,7 +931,7 @@ function Game:choose(index)
                         -- Replacement damage nodes own the damage; their common authored form
                         -- removes one randomly selected ability point per successful hit.
                         local abilities=State.ability_names
-                        local ability=abilities[self.random(#abilities)]
+                        local ability=abilities[self:roll(#abilities)]
                         self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-1)
                     elseif a.abilitydamaged and a.abilitydamaged:lower()~="stamina" then
                         local ability=ability_key(a.abilitydamaged)
@@ -964,6 +1007,29 @@ function Game:choose(index)
         return {title="Market",text=table.concat(self.text),actions=self.actions}
     end
     return nil,"Unsupported interaction: "..tostring(action.kind)
+end
+
+function Game:choose(index)
+    local action=self.actions[index]
+    if not action then return nil,"Invalid choice" end
+    self.preview_text=nil
+    self.journal:begin(action.kind)
+    local progress=self.state.progress
+    local resolves={skillcheck=true,random=true,fight=true,training=true,return=true,
+        resurrection=true,resurrect=true,leave_market=true,goto=true}
+    if resolves[action.kind] and progress and action.instruction then progress.completed[action.instruction]=true end
+    self.state.pending=nil
+    local ok,result,err=pcall(self._choose,self,index)
+    if not ok or not result then
+        self.journal:rollback()
+        return nil,ok and err or result
+    end
+    if not self.state.pending then
+        self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,
+            instruction=action.instruction,resume_kind=action.kind,actions={}}
+    end
+    self.journal:commit()
+    return result,err
 end
 
 return Game
