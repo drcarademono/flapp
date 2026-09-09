@@ -227,25 +227,32 @@ function Game:mutate(name, a, direction)
         s.shards=0
     end
     if direction<0 and (a.item=="*" or a.weapon=="*" or a.armour=="*" or a.tool=="*") then
+        local loss_items=self:loss_source(a)
         if a.chance then
             local numerator,denominator=tostring(a.chance):match("^(%d+)%s*/%s*(%d+)$")
             numerator,denominator=tonumber(numerator),tonumber(denominator)
             if numerator and denominator and denominator>0 then
-                for index=#s.items,1,-1 do
-                    local item=s.items[index]
+                for index=#loss_items,1,-1 do
+                    local item=loss_items[index]
                     if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then
                         local lost=0
                         for _=1,item.quantity or 1 do if self:roll(denominator)<=numerator then lost=lost+1 end end
-                        if lost>0 then Inventory.remove_by_id(s,item.id,lost) end
+                        if lost>0 then self:remove_loss_item(a,item.id,lost) end
                     end
                 end
             end
         else
-            for index=#s.items,1,-1 do
-                local item=s.items[index]
-                if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then Inventory.remove_by_id(s,item.id,item.quantity) end
+            for index=#loss_items,1,-1 do
+                local item=loss_items[index]
+                if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then self:remove_loss_item(a,item.id,item.quantity) end
             end
         end
+    end
+    if direction<0 and a.itemat then
+        local items=self:loss_source(a); local wanted=self:value(a.itemat); local seen=0
+        for _,item in ipairs(items) do if item.kind~="money" then
+            seen=seen+1; if seen==wanted then self:remove_loss_item(a,item.id,1); break end
+        end end
     end
     if a.addtag or a.removetag or a.addbonus then
         for _,item in ipairs(s.items) do if Inventory.matches(item,a) then
@@ -315,7 +322,13 @@ function Game:mutate(name, a, direction)
             local item=item_from(a); item.name=itemname
             item.weapon=a.weapon~=nil or item.weapon; item.armour=a.armour~=nil or item.armour; item.tool=a.tool~=nil
             State.add_item(s,item)
-        else State.remove_matching_items(s,a,self:value(a.multiple or 1)) end
+        else
+            local remaining=self:value(a.multiple or 1); local indices,items=self:loss_indices(a)
+            for index=#indices,1,-1 do
+                local item=items[indices[index]]; local take=math.min(item.quantity or 1,remaining)
+                self:remove_loss_item(a,item.id,take); remaining=remaining-take; if remaining<=0 then break end
+            end
+        end
     end
 end
 
@@ -326,6 +339,53 @@ function Game:apply_tick_count(attributes)
         local key=self.state.book..":"..self.state.section
         self.state.models.section_ticks[key]=(self.state.models.section_ticks[key] or 0)+count
     end
+end
+
+function Game:loss_source(attributes)
+    if attributes.cache then
+        local cache=self.state.caches[attributes.cache]
+        return cache and cache.items or {},cache
+    end
+    return self.state.items,self.state
+end
+
+function Game:loss_indices(attributes)
+    local items=self:loss_source(attributes); local wrapper={items=items}
+    return Inventory.matching_indices(wrapper,attributes,false),items
+end
+
+function Game:show_loss_selection(node)
+    local selection=self.state.selection; local indices,items=self:loss_indices(selection.attributes)
+    self.actions={}
+    for _,index in ipairs(indices) do
+        local item=items[index]
+        self:add_action("Lose "..item.name,"loss_select",{item_id=item.id,instruction=node._path})
+    end
+end
+
+function Game:remove_loss_item(attributes,id,quantity)
+    local items,owner=self:loss_source(attributes); quantity=quantity or 1
+    for index,item in ipairs(items) do if item.id==id then
+        local take=math.min(item.quantity or 1,quantity); item.quantity=(item.quantity or 1)-take
+        if item.quantity<=0 then
+            if owner==self.state then Inventory.unequip(self.state,item) end
+            table.remove(items,index)
+        end
+        return take
+    end end
+    return 0
+end
+
+function Game:start_loss_selection(node)
+    local a=node.attr; local indices,items=self:loss_indices(a)
+    if self.state.selection and self.state.selection.kind=="loss" and self.state.selection.instruction==node._path then
+        self:show_loss_selection(node); self:pause_section(); return true
+    end
+    local needed=math.min(self:value(a.multiple or 1),Inventory.count({items=items},a))
+    if needed<=0 or #indices<=1 or Inventory.same_kind(items,indices) then return false end
+    self.state.selection={schema=1,kind="loss",instruction=node._path,attributes=State.copy(a),remaining=needed}
+    if self.state.progress then self.state.progress.applied[node._path]=nil end
+    self:show_loss_selection(node); self:pause_section(); return true
 end
 
 function Game:add_action(label, kind, data)
@@ -936,6 +996,7 @@ function Game:walk(node, enabled)
             for _,ability in ipairs(State.ability_names) do self:add_action((self:node_text(node) or "Choose ability").." ("..ability..")","mutate",{node=node,direction=-1,ability=ability}) end
             self:pause_section(); return
         end
+        if truth(a.force,true) and (a.item or a.weapon or a.armour or a.tool) and a.item~="*" and a.weapon~="*" and a.armour~="*" and a.tool~="*" and self:start_loss_selection(node) then return end
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Pay cost","mutate",{node=node,direction=-1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
         self:mutate(n,a,-1)
@@ -1291,6 +1352,20 @@ function Game:_choose(index)
         if frame and frame.kind=="use_effect" then table.remove(self.state.execution.frames) end
         self.actions={}; self:resume_section()
         return {title="Item used",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="loss_select" then
+        local selection=self.state.selection
+        if not selection or selection.kind~="loss" then return nil,"There is no item-loss selection in progress." end
+        if self:remove_loss_item(selection.attributes,action.data.item_id,1)==0 then return nil,"That item is no longer available." end
+        selection.remaining=selection.remaining-1
+        if selection.remaining>0 then
+            local node=self.nodes_by_path[selection.instruction]
+            self:show_loss_selection(node)
+            return {title="Choose possessions",text="Choose another item to lose.",actions=self.actions,image=self.image}
+        end
+        local instruction=selection.instruction; self.state.selection=nil
+        if self.state.progress then self.state.progress.applied[instruction]=true end
+        self.actions={}; self:resume_section()
+        return {title="Possessions lost",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="mutate" then
         local node=action.data.node
         local attributes=State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end

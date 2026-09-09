@@ -38,6 +38,17 @@ function Inventory.matching_indices(state,wanted,allow_kept)
     return out
 end
 
+function Inventory.same_kind(items,indices)
+    local first
+    for _,index in ipairs(indices) do
+        local item=items[index]
+        local tags={}; for tag in pairs(Inventory.tags(item.tags)) do tags[#tags+1]=tag end; table.sort(tags)
+        local value=table.concat({item.name or "",item.kind or "",tostring(item.bonus or ""),table.concat(tags,",")},"|")
+        if first and first~=value then return false end; first=value
+    end
+    return true
+end
+
 function Inventory.remove_by_id(state,id,quantity)
     quantity=tonumber(quantity) or 1
     for index,item in ipairs(state.items) do if item.id==id then

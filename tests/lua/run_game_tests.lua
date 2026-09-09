@@ -136,6 +136,18 @@ local function blessing_prompts()
     assert(fight:choose(1)); equal(combat_state.combat.defence_bonus,4,"defence blessing bonus")
 end
 
+local function ambiguous_item_loss()
+    local state=ready_state()
+    state.items={State.new_item{id="plain",name="blade",bonus=0},State.new_item{id="fine",name="blade",bonus=2}}
+    local game=Game.new(catalog("item_loss.xml"),state,function() return 1 end)
+    assert(game:load("1","test")); equal(#game.actions,2,"ambiguous loss choices")
+    equal(state.variables.continued,nil,"loss blocks continuation")
+    local restored=State.copy(state); local resumed=Game.new(catalog("item_loss.xml"),restored,function() return 1 end)
+    assert(resumed:load("1","test")); equal(#resumed.actions,2,"loss choices survive reload")
+    assert(resumed:choose(1)); equal(#restored.items,1,"selected item removed")
+    equal(restored.variables.continued,1,"loss continuation resumed")
+end
+
 local function adventurer_stat_rules()
     local state=ready_state(); state.abilities.Combat=11; state.models.stats.natural.Combat=11
     equal(Stats.adjust(state,"Combat",5,false),1,"ability upper cap")
@@ -163,6 +175,7 @@ end
 
 effects_and_afflictions()
 embedded_use_program()
+ambiguous_item_loss()
 blessing_prompts()
 adventurer_stat_rules()
 io.write("Lua Java-oracle scenarios passed\n")

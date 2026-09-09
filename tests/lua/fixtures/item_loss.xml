@@ -1,0 +1,4 @@
+<section id="test">
+  <lose item="blade" multiple="1">Lose a blade</lose>
+  <set var="continued" value="1"/>
+</section>

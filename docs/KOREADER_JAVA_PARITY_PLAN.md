@@ -333,9 +333,11 @@ and executable Java-oracle comparison remain open.
 
 ### F2. Loss
 
-**In progress:** wildcard loss now preserves Java `keep` items and fractional
-`chance="x/y"` loss uses the journaled RNG per item unit. Ambiguous selection,
-cache targets, `itemat`, and Java-owned undo remain open.
+**In progress:** wildcard loss now preserves Java `keep` items, fractional
+`chance="x/y"` loss uses the journaled RNG per item unit, forced ambiguous item
+loss has a stable-id chooser that survives reload, and cache/`itemat` loss uses
+the selected collection. Optional ambiguous loss, Java-oracle comparison, and
+Java-owned undo remain open.
 
 - [ ] Implement chance-per-item loss with journaled dice.
 - [ ] Implement fatal versus nonfatal ability/Stamina loss.
