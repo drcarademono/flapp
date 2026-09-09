@@ -1,5 +1,10 @@
 # Java game systems audit and KOReader parity plan
 
+> **Second-pass status:** This original phase audit is retained as the historical
+> implementation checklist. The independent post-Phase-6 verification in
+> [`JAVA_GAME_SYSTEMS_REAUDIT.md`](JAVA_GAME_SYSTEMS_REAUDIT.md) supersedes its
+> broad completion implications and records the remaining confirmed gaps.
+
 - **Audit date:** 2026-09-09
 - **Reference implementation:** the Java sources under `flands/`
 - **Port reviewed:** `plugins/jafl.koplugin/`
