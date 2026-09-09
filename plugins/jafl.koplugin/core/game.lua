@@ -349,6 +349,14 @@ function Game:loss_source(attributes)
     return self.state.items,self.state
 end
 
+function Game:loss_attributes(node)
+    local attributes=State.copy(node.attr)
+    if attributes.ability and attributes.amount then
+        attributes.amount=self:value(attributes.amount)+self:check_adjustment(node)
+    end
+    return attributes
+end
+
 function Game:loss_indices(attributes)
     local items=self:loss_source(attributes); local wrapper={items=items}
     return Inventory.matching_indices(wrapper,attributes,false),items
@@ -374,6 +382,37 @@ function Game:remove_loss_item(attributes,id,quantity)
         return take
     end end
     return 0
+end
+
+-- PriceNode is an availability-sensitive action in Java: an already-paid
+-- flag, insufficient money, or a missing item disables it.  Payment itself is
+-- atomic, and deliberately refuses an ambiguous item match so the player can
+-- disambiguate their inventory before trying again.
+function Game:price_details(node)
+    local a=node.attr or {}
+    local details={cost=a.shards and self:value(a.shards) or 0,indices={}}
+    if a.item or a.weapon or a.armour or a.tool then
+        details.indices=Inventory.matching_indices(self.state,a,true)
+    end
+    details.available=(not a.flag or not self.state.flags[a.flag]) and
+        self.state.shards>=details.cost and
+        (not (a.item or a.weapon or a.armour or a.tool) or #details.indices>0)
+    return details
+end
+
+function Game:pay_price(node)
+    local details=self:price_details(node)
+    if not details.available then return false,"That price is no longer available." end
+    if #details.indices>1 then
+        return false,"Which item do you want to pay with? Select one in your possessions and try again."
+    end
+    if #details.indices==1 then
+        local item=self.state.items[details.indices[1]]
+        Inventory.remove_by_id(self.state,item.id,1)
+    end
+    self.state.shards=self.state.shards-details.cost
+    if node.attr.flag then self.state.flags[node.attr.flag]=true end
+    return true,details.cost
 end
 
 function Game:start_loss_selection(node)
@@ -583,12 +622,42 @@ function Game:route_death()
     if death and tostring(death)~=self.state.section then return self:load(self.state.book,death) end
 end
 
+function Game:adjustment(attributes)
+    local a=attributes or {}; local matched=false; local derived
+    local function comparison(value)
+        if a.greaterthan then return value>tonumber(a.greaterthan) end
+        if a.lessthan then return value<tonumber(a.lessthan) end
+        return true
+    end
+    if a.god and ((a.god=="*" and next(self.state.gods)~=nil) or self.state.gods[a.god]) then matched=true end
+    if a.profession and self.state.profession:lower()==a.profession:lower() then matched=true end
+    if (a.item or a.weapon or a.armour or a.tool) and Inventory.count(self.state,a)>0 then matched=true end
+    if a.codeword and self.state.codewords[a.codeword]~=nil then matched=true end
+    if a.titleval then derived=tonumber(self.state.titles[a.titleval]) or self:value(a.default or 0); matched=true end
+    if a.ship or a.crew then
+        local ship=Ships.active(self.state)
+        if ship and a.ship and ship.type==Ships.type(a.ship) then matched=true end
+        if ship and a.crew and ship.crew.quality==Ships.crew(a.crew) then matched=true end
+    end
+    if a.ability then
+        local score=self:ability(a.ability,a.modifier)
+        if comparison(score) then matched=true; if not a.greaterthan and not a.lessthan then derived=score end end
+    end
+    if a.name then
+        local value=tonumber(self.state.codewords[a.name]) or 0
+        if comparison(value) then matched=true; if not a.greaterthan and not a.lessthan then derived=value end end
+    end
+    local count=0; for _ in pairs(a) do count=count+1 end
+    if count==1 and (a.value~=nil or a.amount~=nil) then matched=true end
+    if not matched then return 0 end
+    if a.value~=nil or a.amount~=nil then return self:value(a.value or a.amount) end
+    return derived or 0
+end
+
 function Game:check_adjustment(node)
     local adjustment = 0
     for _, child in ipairs(node.children or {}) do
-        if type(child) == "table" and child.name == "adjust" and self:condition(child.attr) then
-            adjustment = adjustment + self:value(child.attr.amount or child.attr.value)
-        end
+        if type(child) == "table" and child.name == "adjust" then adjustment=adjustment+self:adjustment(child.attr) end
     end
     return adjustment
 end
@@ -999,11 +1068,17 @@ function Game:walk(node, enabled)
         if truth(a.force,true) and (a.item or a.weapon or a.armour or a.tool) and a.item~="*" and a.weapon~="*" and a.armour~="*" and a.tool~="*" and self:start_loss_selection(node) then return end
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Pay cost","mutate",{node=node,direction=-1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
-        self:mutate(n,a,-1)
+        self:mutate(n,self:loss_attributes(node),-1)
     elseif n=="adjust" then return
     elseif n=="price" then
-        local cost=self:value(a.shards or a.gold or a.amount or 0)
-        if self.state.shards>=cost then self:add_action(plain(node)~="" and plain(node) or ("Pay "..cost.." Shards"),"pay_price",{node=node,cost=cost}) end
+        local details=self:price_details(node)
+        if details.available then
+            if truth(a.hidden,false) then
+                local paid,message=self:pay_price(node); if not paid then self.errors[#self.errors+1]=message end
+            else
+                self:add_action(plain(node)~="" and plain(node) or ("Pay "..details.cost.." Shards"),"pay_price",{node=node})
+            end
+        end
         return
     elseif n=="adjustmoney" then
         local multiplier=self:value(a.multiply or 1); local cache=a.cache or a.name
@@ -1368,7 +1443,7 @@ function Game:_choose(index)
         return {title="Possessions lost",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="mutate" then
         local node=action.data.node
-        local attributes=State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end
+        local attributes=node.name=="lose" and self:loss_attributes(node) or State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end
         self:mutate(node.name,attributes,action.data.direction)
         if action.data.direction>0 and node.attr.god then Inventory.attach_god_effects(self.state,node.attr.god,node) end
         if node.name=="tick" then self:apply_tick_count(node.attr) end
@@ -1377,11 +1452,10 @@ function Game:_choose(index)
         return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="pay_price" then
         local data=action.data
-        if self.state.shards<data.cost then return nil,"You cannot afford that." end
-        self.state.shards=self.state.shards-data.cost
-        if data.node.attr.flag then self.state.flags[data.node.attr.flag]=true end
+        local paid,cost=self:pay_price(data.node)
+        if not paid then return nil,cost end
         for index,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,index); break end end
-        return {title="Payment made",text="Paid "..data.cost.." Shards.",actions=self.actions,image=self.image}
+        return {title="Payment made",text="Paid "..cost.." Shards.",actions=self.actions,image=self.image}
     elseif action.kind=="rest" then
         local node,a=action.data,action.data.attr
         local cost=self:value(a.shards or 0)

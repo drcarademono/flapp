@@ -151,6 +151,22 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('s.models.section_ticks[s.book..":"..s.section]', game)
         self.assertIn('name=="tick" and a.name', game)
 
+    def test_adjust_nodes_use_java_value_or_condition_semantics(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:adjustment(attributes)", game)
+        self.assertIn("if a.titleval then", game)
+        self.assertIn("if a.ship or a.crew then", game)
+        self.assertIn("adjustment=adjustment+self:adjustment(child.attr)", game)
+        self.assertIn("self:loss_attributes(node)", game)
+
+    def test_prices_are_revalidated_and_paid_atomically(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:price_details(node)", game)
+        self.assertIn("function Game:pay_price(node)", game)
+        self.assertIn("#details.indices>1", game)
+        self.assertIn("if truth(a.hidden,false) then", game)
+        self.assertIn("local paid,cost=self:pay_price(data.node)", game)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

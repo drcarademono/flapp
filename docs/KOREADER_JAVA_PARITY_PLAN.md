@@ -310,6 +310,12 @@ still required.
 
 ### E3. Control/data nodes
 
+**In progress:** `AdjustNode` now follows Java's alternative god, profession,
+item, codeword, numeric title, ship, crew, ability, and numeric-codeword
+conditions; supports automatic and derived values; and contributes to random,
+check, Rank-check, and loss adjustments. Exact title-pattern lookup, ambiguous
+ship selection, roll ownership, and Java-oracle comparison remain open.
+
 - [ ] Complete `SetVarNode` modifier/cache/item/dock forms.
 - [ ] Complete `AdjustNode` thresholds, defaults, title values, professions,
   abilities, items, ships, cargo, and crew.
@@ -348,6 +354,12 @@ Java-owned undo remain open.
 - [ ] Match cancel/retry behavior and linked undo.
 
 ### F3. Price and rest
+
+**In progress:** `PriceNode` now revalidates its paid flag, Shards, and item
+requirements at activation time, performs item-and-money payment atomically,
+executes hidden prices immediately, and preserves Java's retry behavior for an
+ambiguous item payment. Availability listeners, oracle coverage, and the full
+rest matrix remain open.
 
 - [ ] Port complete `PriceNode` currencies, items, filters, flags, grouped
   payment, availability listeners, rollback, and continuation.
