@@ -20,6 +20,15 @@ class KOReaderPluginTests(unittest.TestCase):
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
 
+    def test_capability_signature_census_is_current(self) -> None:
+        subprocess.run(["python3", "tools/audit-koreader-capabilities.py", "--check"], cwd=ROOT, check=True)
+        census = json.loads((ROOT / "docs" / "koreader-capability-signatures.json").read_text())
+        self.assertEqual(census["summary"]["total"], len(census["signatures"]))
+        self.assertGreater(census["summary"]["total"], 1000)
+        for entry in census["signatures"]:
+            self.assertEqual("unverified", entry["status"])
+            self.assertTrue(entry["examples"])
+
     def test_plugin_does_not_embed_java_or_desktop_ui(self) -> None:
         source = "\n".join(path.read_text() for path in PLUGIN.rglob("*.lua"))
         self.assertNotIn("java -jar", source)

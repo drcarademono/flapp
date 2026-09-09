@@ -150,6 +150,11 @@ expected constants.
 
 ### A3. Corpus signature census
 
+**Baseline implemented:** `tools/audit-koreader-capabilities.py` now inventories
+1,358 distinct executable shapes and preserves capability/oracle annotations
+across regeneration. All 1,358 deliberately remain `unverified` until backed by
+Java/Lua output; merely generating the census does not complete A3.
+
 - [ ] Generate normalized signatures for every executable element, its parent
   context, relevant siblings/children, and attribute combination.
 - [ ] Record reachability separately from raw occurrence.
