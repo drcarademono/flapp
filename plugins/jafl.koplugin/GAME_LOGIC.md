@@ -217,6 +217,12 @@ position, so later mutations still execute exactly once. This prevents commas,
 periods, explanatory clauses, and later paragraphs after any blocking tag from
 being cut off without applying their game effects prematurely.
 
+Interaction summaries are appended only after the coroutine has rendered its
+authored continuation. Training and combat therefore keep the complete book text
+together, followed by a separate blank-line-delimited result. In book 2, section
+423, “Training roll: N.” appears after the sentence ending “turn to 97.” rather
+than between “Roll one die” and the comma that follows it.
+
 Main adventure prose and generated choice buttons use the same ordinary
 12-point book-reading size. Choice labels are not bold, leaving the title and
 status controls as the visual hierarchy rather than oversized action text.

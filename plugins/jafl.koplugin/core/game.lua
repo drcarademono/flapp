@@ -804,8 +804,8 @@ function Game:choose(index)
         end
         self.state.variables.exp=roll-old_score
         if a.var then self.state.variables[a.var]=roll end
-        self.text[#self.text+1]="\n\nTraining roll: "..roll.."."
         self.actions={}; self:resume_section()
+        self.text[#self.text+1]="\n\nTraining roll: "..roll.."."
         return {title="Training result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="resurrection" then
         self.state.resurrection=State.copy(action.data)
@@ -893,13 +893,14 @@ function Game:choose(index)
         end
 
         local won=enemy_stamina<=flee_at and self.state.stamina>0
-        self.text[#self.text+1]="\n\n"..table.concat(log,"\n").."\n\n"..(won and "You win the fight." or "You have been defeated.")
+        local combat_result="\n\n"..table.concat(log,"\n").."\n\n"..(won and "You win the fight." or "You have been defeated.")
 
         self.actions={}
         -- Just like ExecutableRunner.continueExecution(), resume after the fight.
         -- This evaluates dead= conditions and applies effects in their authored
         -- order, stopping at the first usable forced goto.
         self:resume_section()
+        self.text[#self.text+1]=combat_result
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="market" then
         self:open_market(action.data)

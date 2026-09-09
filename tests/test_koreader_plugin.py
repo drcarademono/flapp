@@ -251,6 +251,13 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('<training ability="thievery" dice="1"/>,', section)
         self.assertIn('Then <goto section="97"/>.', section)
 
+    def test_interaction_results_follow_complete_authored_text(self) -> None:
+        source = (PLUGIN / "core" / "game.lua").read_text()
+        training = source[source.index('elseif action.kind=="training"'):source.index('elseif action.kind=="resurrection"')]
+        self.assertLess(training.index("self:resume_section()"), training.index('"\\n\\nTraining roll: "'))
+        fight = source[source.index('elseif action.kind=="fight"'):source.index('elseif action.kind=="market"')]
+        self.assertLess(fight.index("self:resume_section()"), fight.index("self.text[#self.text+1]=combat_result"))
+
     def test_text_parsing_audit_tracks_platform_only_differences(self) -> None:
         audit = (PLUGIN / "TEXT_PARSING_AUDIT.md").read_text()
         self.assertIn("Java-compatible plain-text semantics now implemented", audit)

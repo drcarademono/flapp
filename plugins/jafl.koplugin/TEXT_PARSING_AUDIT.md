@@ -28,6 +28,8 @@ Resumable blocking nodes use a separate look-ahead buffer for the rest of the
 section. This mirrors Java's parse-before-execute visibility without advancing
 the Lua execution coroutine. The buffer is discarded before continuation, so
 the same nodes are subsequently executed—not duplicated—as authored.
+Generated roll and combat summaries are appended after that continuation has
+been rendered, keeping diagnostics out of the middle of authored sentences.
 
 The remaining differences are primarily platform presentation differences:
 
