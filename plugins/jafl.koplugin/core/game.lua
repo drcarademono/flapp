@@ -1,6 +1,7 @@
 local XML = require("content/xml")
 local Compatibility = require("content/compatibility")
 local Expression = require("core/expression")
+local Inventory = require("core/inventory")
 local Journal = require("core/journal")
 local State = require("core/state")
 
@@ -21,9 +22,16 @@ local function plain(node)
     local out = {}; for _, child in ipairs(node.children or {}) do out[#out+1] = plain(child) end
     return normalize_text(table.concat(out)):match("^%s*(.-)%s*$")
 end
-local function item_from(a)
-    return { name=a.name or "item", quantity=tonumber(a.quantity or a.multiple) or 1, bonus=tonumber(a.bonus),
+local function item_from(a,node)
+    local item={ name=a.name or a.item or "item", quantity=tonumber(a.quantity or a.multiple) or 1, bonus=tonumber(a.bonus),
         type=a.type, tags=a.tags, weapon=a.weapon, armour=a.armour }
+    item.effects={}
+    for _,child in ipairs(node and node.children or {}) do if type(child)=="table" and child.name=="effect" then
+        item.effects[#item.effects+1]={kind=child.attr.type or "aura",ability=child.attr.ability,
+            operation=child.attr.target and "target" or child.attr.divide and "divide" or "add",
+            value=child.attr.bonus or child.attr.divide or child.attr.target,uses=child.attr.uses,text=child.attr.text}
+    end end
+    return item
 end
 
 function Game.new(catalog, state, random)
@@ -34,6 +42,7 @@ function Game.new(catalog, state, random)
 end
 
 function Game:roll(sides) return self.journal:draw(sides) end
+function Game:ability(name,modifier) return Inventory.ability(self.state,tostring(name or ""):gsub("^%l",string.upper),modifier) end
 
 function Game:value(v)
     if v == nil then return 0 end
@@ -42,7 +51,7 @@ function Game:value(v)
     local sign, key = v:match("^([+-]?)([%w_*.-]+)$")
     if key then
         n = self.state.variables[key]
-        if n == nil then n = self.state.abilities[key:gsub("^%l", string.upper)] end
+        if n == nil and self.state.abilities[key:gsub("^%l", string.upper)]~=nil then n=self:ability(key) end
         n = n or 0
         return sign == "-" and -n or n
     end
@@ -68,7 +77,7 @@ function Game:value(v)
             for _,item in ipairs(self.state.items) do if item.id==id or item.equipped and item.kind=="armour" then return tonumber(item.bonus) or 0 end end
             return 0
         end
-        return self.state.variables[key] or self.state.abilities[key:gsub("^%l",string.upper)] or 0
+        return self.state.variables[key] or self:ability(key) or 0
     end)
 end
 
@@ -82,10 +91,10 @@ function Game:condition(a)
     if ok and a.god then ok = s.gods[a.god] == true end
     if ok and a.profession then ok = s.profession:lower() == a.profession:lower() end
     if ok and a.gender then ok = s.gender:sub(1,1):lower() == a.gender:sub(1,1):lower() end
-    if ok and a.item then ok = State.item_count(s, a.item) >= (tonumber(a.multiple) or 1) end
-    if ok and a.weapon then ok = State.has_item(s,a.weapon=="*" and nil or a.weapon,"weapon",a.bonus,a.tags) end
-    if ok and a.armour then ok = State.has_item(s,a.armour=="*" and nil or a.armour,"armour",a.bonus,a.tags) end
-    if ok and a.tool then ok = State.has_item(s,a.tool=="*" and nil or a.tool,"tool",a.bonus,a.tags) end
+    if ok and a.item then ok = Inventory.count(s,a) >= (tonumber(a.multiple) or 1) end
+    if ok and a.weapon then ok = Inventory.count(s,a)>0 end
+    if ok and a.armour then ok = Inventory.count(s,a)>0 end
+    if ok and a.tool then ok = Inventory.count(s,a)>0 end
     if ok and a.shards then
         local available=s.shards
         if a.cache then available=(s.caches[a.cache] and s.caches[a.cache].shards) or 0 end
@@ -120,7 +129,7 @@ function Game:condition(a)
         ok=ship~=nil and tostring(ship.docked)==tostring(a.docked)
     end
     if ok and a.ability then
-        local score=s.abilities[a.ability:gsub("^%l", string.upper)] or 0
+        local score=self:ability(a.ability,a.modifier)
         if a.greaterthan then ok=score>self:value(a.greaterthan)
         elseif a.lessthan then ok=score<self:value(a.lessthan)
         elseif a.equals then ok=score==self:value(a.equals) end
@@ -163,7 +172,7 @@ function Game:mutate(name, a, direction)
     elseif a.title then for _,v in ipairs(words(a.title)) do s.titles[v] = direction > 0 or nil end
     elseif a.god then s.gods[a.god] = direction > 0 or nil
     elseif a.flag then s.flags[a.flag] = direction > 0 or nil
-    elseif a.blessing then s.blessings[a.blessing]=direction>0 and (tonumber(a.bonus) or true) or nil
+    elseif a.blessing then if direction>0 then Inventory.bless(s,a) else s.blessings[a.blessing]=nil end
     elseif a.curse then s.curses[a.curse]=direction>0 and true or nil
     elseif a.disease then s.diseases=s.diseases or {}; s.diseases[a.disease]=direction>0 and true or nil
     elseif a.poison then s.poisons=s.poisons or {}; s.poisons[a.poison]=direction>0 and true or nil
@@ -367,19 +376,28 @@ function Game:open_market(node, message)
     visit(node)
 end
 
-function Game:apply_affliction(kind, node)
-    local a=node.attr; local collection=kind=="curse" and self.state.curses or
-        kind=="disease" and self.state.diseases or self.state.poisons
-    collection[a.name or kind]=true
-    for _,child in ipairs(node.children or {}) do
-        if type(child)=="table" and child.name=="effect" and child.attr.ability then
-            local names=child.attr.ability=="*" and State.ability_names or {ability_key(child.attr.ability)}
-            for _,ability in ipairs(names) do
-                if child.attr.target then self.state.abilities[ability]=self:value(child.attr.target)
-                else self.state.abilities[ability]=math.max(1,math.min(12,(self.state.abilities[ability] or 0)+self:value(child.attr.bonus or 0))) end
-            end
-        end
+function Game:open_cache(node,message)
+    local a=node.attr; local key=a.name or "cache"; local cache=Inventory.cache(self.state,key,a,node)
+    self.actions={}; self.text={message or (a.text or "Manage stored possessions.")}
+    self:add_action("Leave cache","leave_cache",{node=node,key=key})
+    local unit=cache.rules.multiples or 1
+    if self.state.shards>=unit and (not cache.rules.maximum or cache.shards+unit<=cache.rules.maximum) then
+        self:add_action("Deposit "..unit.." Shards","cache_money",{node=node,key=key,amount=unit})
     end
+    local charge=cache.rules.withdraw_charge or 0
+    if cache.shards>=unit+charge then self:add_action("Withdraw "..unit.." Shards","cache_money",{node=node,key=key,amount=-unit}) end
+    if not cache.rules.item_limit or #cache.items<cache.rules.item_limit then
+        for index,item in ipairs(self.state.items) do if Inventory.cache_accepts(cache,item) then
+            self:add_action("Deposit "..item.name,"cache_item",{node=node,key=key,index=index,direction=1})
+        end end
+    end
+    for index,item in ipairs(cache.items) do
+        self:add_action("Withdraw "..item.name,"cache_item",{node=node,key=key,index=index,direction=-1})
+    end
+end
+
+function Game:apply_affliction(kind, node)
+    Inventory.afflict(self.state,kind,node)
 end
 
 function Game:resume_pending_check_children()
@@ -552,6 +570,14 @@ function Game:walk(node, enabled)
                 self:add_action(choice.text or choice.key,"goto",choice.destination)
             end
         end
+        for index,item in ipairs(self.state.items) do
+            if (item.kind=="weapon" or item.kind=="armour" or item.kind=="tool") and not item.equipped then
+                self:add_action("Equip "..item.name,"equip",{index=index})
+            end
+            for effect_index,effect in ipairs(item.effects or {}) do if effect.kind=="use" and (effect.uses==nil or effect.uses>0) then
+                self:add_action(effect.text or ("Use "..item.name),"use_item",{index=index,effect=effect_index})
+            end end
+        end
     elseif n=="goto" then
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
@@ -575,6 +601,7 @@ function Game:walk(node, enabled)
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Apply gain","mutate",{node=node,direction=1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
         self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
+        if a.god then Inventory.attach_god_effects(self.state,a.god,node) end
     elseif n=="gain" then
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Take gain","mutate",{node=node,direction=1}); return end
         self:mutate(n,a,1)
@@ -713,7 +740,7 @@ function Game:walk(node, enabled)
         elseif self.state.stamina<=0 and self.state.resurrection then self:add_action(label,"resurrect",self.state.resurrection) end
         return
     elseif n=="itemcache" or n=="moneycache" then
-        local key=a.name; self.state.caches[key]=self.state.caches[key] or {items={},shards=0}
+        local key=a.name; Inventory.cache(self.state,key,a,node)
         self:add_action(a.text or plain(node) or "Open cache","cache",{key=key,node=node}); return
     elseif n=="transfer" then
         local source=a.from and self.state.caches[a.from]
@@ -855,9 +882,28 @@ function Game:_choose(index)
     if action.kind=="startbook" then
         self.state.book=tostring(action.data.book); self.state.section="New"
         return self:load(self.state.book,self.state.section)
+    elseif action.kind=="equip" then
+        local item=self.state.items[action.data.index]; if not item then return nil,"Item is no longer available." end
+        Inventory.equip(self.state,item)
+        for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
+        return {title="Equipment",text="Equipped "..item.name..".",actions=self.actions,image=self.image}
+    elseif action.kind=="use_item" then
+        local item=self.state.items[action.data.index]; local effect=item and item.effects[action.data.effect]
+        if not effect or effect.uses==0 then return nil,"That effect is no longer available." end
+        local ability=effect.ability and ability_key(effect.ability)
+        if ability and ability~="*" then
+            local value=tonumber(effect.value) or 0
+            if effect.operation=="target" then self.state.abilities[ability]=value
+            elseif effect.operation=="divide" then self.state.abilities[ability]=math.floor((self.state.abilities[ability] or 0)/math.max(1,value))
+            else self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)+value) end
+        end
+        if effect.uses then effect.uses=effect.uses-1 end
+        if effect.uses==0 then for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end end
+        return {title="Item used",text=effect.text or ("Used "..item.name.."."),actions=self.actions,image=self.image}
     elseif action.kind=="mutate" then
         local node=action.data.node
         self:mutate(node.name,node.attr,action.data.direction)
+        if action.data.direction>0 and node.attr.god then Inventory.attach_god_effects(self.state,node.attr.god,node) end
         if node.name=="tick" then self.state.ticks=self.state.ticks+self:value(node.attr.count or node.attr.amount or 1) end
         self.state.progress.applied[node._path]=true
         for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
@@ -890,7 +936,7 @@ function Game:_choose(index)
             self.state.variables["*ability*"]="Rank"
         else
             local chosen=action.data.ability or words(a.ability)[1]
-            score=(self.state.abilities[ability_key(chosen)] or 0)+adjustment
+            score=self:ability(chosen)+adjustment
             roll=self:roll(6)+self:roll(6)+score
             success=roll>self:value(a.level)
             description=string.format("%s check: rolled %d against Difficulty %d — %s.",
@@ -958,7 +1004,7 @@ function Game:_choose(index)
     elseif action.kind=="training" then
         local a=action.data.attr; local ability=ability_key(a.ability)
         local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
-        local old_score=ability and self.state.abilities[ability] or 0
+        local old_score=ability and self:ability(ability) or 0
         if ability and ability~="?" and roll>(self.state.abilities[ability] or 0) then
             self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1)
         end
@@ -977,10 +1023,22 @@ function Game:_choose(index)
         if a.shards then self.state.shards=math.max(0,self.state.shards-self:value(a.shards)) end
         return self:load(a.book or self.state.book,a.section)
     elseif action.kind=="cache" then
-        local cache=self.state.caches[action.data.key]
-        local lines={"Stored shards: "..tostring(cache.shards or 0),"Stored items:"}
-        for _,item in ipairs(cache.items or {}) do lines[#lines+1]="• "..item.name end
-        return {title=action.data.key,text=table.concat(lines,"\n"),actions=self.actions,image=self.image}
+        self:open_cache(action.data.node)
+        return {title=action.data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="cache_money" then
+        local data=action.data; local cache=self.state.caches[data.key]
+        if data.amount>0 then self.state.shards=self.state.shards-data.amount; cache.shards=cache.shards+data.amount
+        else local unit=-data.amount; cache.shards=cache.shards-unit-(cache.rules.withdraw_charge or 0); self.state.shards=self.state.shards+unit end
+        self:open_cache(data.node,"Cache balance updated.")
+        return {title=data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="cache_item" then
+        local data=action.data; local cache=self.state.caches[data.key]
+        if data.direction>0 then local item=self.state.items[data.index]; Inventory.unequip(self.state,item); table.insert(cache.items,table.remove(self.state.items,data.index))
+        else table.insert(self.state.items,table.remove(cache.items,data.index)) end
+        self:open_cache(data.node,"Possessions updated.")
+        return {title=data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="leave_cache" then
+        return {title="Cache",text=table.concat(self.text,"\n"),actions={},image=self.image}
     elseif action.kind=="fight" then
         local fight_node=action.data; local a=fight_node.attr
         local enemy_stamina=self:value(a.stamina or a.endurance or 1)
@@ -1043,7 +1101,7 @@ function Game:_choose(index)
             rounds=rounds+1
             if not player_first then enemy_turn(); player_first=true end
             if self.state.stamina<=0 then break end
-            local roll=roll_dice(self,attack_dice)+(self.state.abilities.Combat or 0)
+            local roll=roll_dice(self,attack_dice)+self:ability("Combat")
             local damage=combat_damage(roll,enemy_defence)
             enemy_stamina=math.max(0,enemy_stamina-damage)
             if a.staminalost and damage>0 then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+damage end
@@ -1076,7 +1134,7 @@ function Game:_choose(index)
         local name=a.name or a.item or "item"
         if action.kind=="buy" then
             if self.state.shards<cost then return nil,"You cannot afford that." end
-            self.state.shards=self.state.shards-cost; State.add_item(self.state,item_from(a))
+            self.state.shards=self.state.shards-cost; State.add_item(self.state,item_from(a,action.data.node))
         else
             if not State.remove_item(self.state,name,1) then return nil,"You do not have that item." end
             self.state.shards=self.state.shards+cost

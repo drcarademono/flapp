@@ -13,7 +13,7 @@ PLUGIN = ROOT / "plugins" / "jafl.koplugin"
 class KOReaderPluginTests(unittest.TestCase):
     def test_required_plugin_files_exist(self) -> None:
         for relative in ("_meta.lua", "main.lua", "core/game.lua", "core/state.lua",
-                         "core/save.lua", "core/journal.lua", "core/expression.lua", "content/xml.lua", "content/catalog.lua",
+                         "core/save.lua", "core/journal.lua", "core/expression.lua", "core/inventory.lua", "content/xml.lua", "content/catalog.lua",
                          "content/compatibility.lua",
                          "ui/gameview.lua", "TEXT_PARSING_AUDIT.md"):
             self.assertTrue((PLUGIN / relative).is_file(), relative)
@@ -342,6 +342,18 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('list[a.key]=State.new_extra_choice(a)', game)
         self.assertIn('for _,choice in pairs(self.state.models.extra_choices)', game)
         self.assertIn('local multiplier=self:value(a.multiply or 1)', game)
+
+    def test_phase_three_inventory_effect_and_cache_foundation(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        inventory = (PLUGIN / "core" / "inventory.lua").read_text()
+        for function in ("prepare_item", "matches", "equip", "ability", "afflict", "bless", "cache", "cache_accepts"):
+            self.assertIn("function Inventory." + function, inventory)
+        self.assertIn('action.kind=="equip"', game)
+        self.assertIn('action.kind=="use_item"', game)
+        self.assertIn('action.kind=="cache_money"', game)
+        self.assertIn('action.kind=="cache_item"', game)
+        self.assertIn("Inventory.cache_accepts", game)
+        self.assertIn('self:ability("Combat")', game)
 
     def test_built_archive_has_installable_layout(self) -> None:
         subprocess.run(["sh", "tools/package-koreader-plugin.sh"], cwd=ROOT, check=True)

@@ -199,7 +199,7 @@
         "tags": 1
       },
       "count": 2,
-      "support": "missing"
+      "support": "partial"
     },
     "extrachoice": {
       "attributes": {
@@ -392,7 +392,7 @@
         "weapon": 1
       },
       "count": 2,
-      "support": "missing"
+      "support": "partial"
     },
     "item": {
       "attributes": {

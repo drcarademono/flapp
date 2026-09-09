@@ -7,7 +7,7 @@ local function empty_models()
     return {
         stats={natural={},modifiers={},derived={}}, equipment={weapon=nil,armour=nil,tools={}},
         afflictions={blessings={},curses={},diseases={},poisons={}},
-        fleet={active=nil,ships={}}, rules={fixed={},temporary={}}, visits={},
+        fleet={active=nil,ships={}}, rules={fixed={},temporary={}}, god_effects={}, next_item_id=1, visits={},
         extra_choices={}, cache_metadata={},
     }
 end
@@ -102,6 +102,12 @@ function State.validate(s)
     s.models.afflictions=s.models.afflictions or {blessings={},curses={},diseases={},poisons={}}
     s.models.fleet=s.models.fleet or {active=nil,ships={}}
     s.models.rules=s.models.rules or {fixed={},temporary={}}
+    s.models.god_effects=s.models.god_effects or {}
+    s.models.next_item_id=s.models.next_item_id or 1
+    for index,item in ipairs(s.items) do
+        if not item.id then item.id="item-"..s.models.next_item_id; s.models.next_item_id=s.models.next_item_id+1 end
+        s.items[index]=require("core/inventory").prepare_item(item)
+    end
     s.models.visits=s.models.visits or {}; s.models.extra_choices=s.models.extra_choices or {}
     s.models.cache_metadata=s.models.cache_metadata or {}
     s.models.afflictions.blessings=s.blessings; s.models.afflictions.curses=s.curses
@@ -151,8 +157,11 @@ function State.remove_matching_items(s, a, count)
 end
 
 function State.add_item(s, item)
-    item = State.new_item(item)
+    if not item.id then item=State.copy(item); item.id="item-"..s.models.next_item_id; s.models.next_item_id=s.models.next_item_id+1 end
+    item = require("core/inventory").prepare_item(item)
     table.insert(s.items, item)
+    if (item.kind=="weapon" and not s.models.equipment.weapon) or
+            (item.kind=="armour" and not s.models.equipment.armour) then require("core/inventory").equip(s,item) end
 end
 
 function State.remove_item(s, name, count)

@@ -189,18 +189,17 @@ continuations.
 
 **KOReader now**
 
-- Stores name, quantity, bonus, a few type booleans, and tags; supports basic
-  existence checks and add/remove operations.
-- Reads effect children only to build display labels. Affliction effects apply
-  a small direct ability subset.
+- Normalizes item instances with kind, stable identity, quantity, structured
+  tags, effects, and equipped state. Weapons, armour, and tools can be equipped.
+- Applies active aura, wielded, and tool effects in derived ability reads, with
+  add/divide/target operations. Limited-use item effects are actionable.
 
 **Still needed**
 
-- Equipped weapon/armour state, derived weapon/armour/tool effects, item-use
-  actions and use counts, aura/wielded/tool ordering, division and fixed-target
-  effects.
-- Structured tags and exact group/include/exclude matching. Current substring
-  matching can give false positives.
+- Complete Java ordering for interacting positive/negative tool effects and all
+  purpose-specific natural/affected ability reads.
+- Apply include/exclude filters to every loss/transfer/market context; structured
+  matching is implemented for caches and inventory helpers.
 - `replace`, `buytags`, `addtag`, `removetag`, `effect`, `using`, `itemat`,
   `quantity`, and group semantics.
 - Interactive choice for ambiguous loss/transfer; preservation of `kept` items;
@@ -225,12 +224,12 @@ continuations.
 
 - Stores caches, tests cached money in a condition, supports narrow all-money
   and broad item transfer paths, and displays cache contents.
-- Cache actions do not offer deposits or withdrawals.
+- Cache screens offer constrained item and money deposit/withdrawal, enforce
+  capacity, multiples and withdrawal charges, and apply include/exclude filters.
 
 **Still needed**
 
-- Interactive cache operations and all maximum, multiple, charge, freeze,
-  filter, and item-limit constraints.
+- Cache freezing and Java's complete unnamed-cache lifecycle.
 - Correct unnamed-cache behavior used by Java, and exact cache lifetime/scope.
 - `adjustmoney` cache targeting and multiplication (all 89 corpus uses specify
   `multiply`; most also specify a cache name).
@@ -342,17 +341,15 @@ continuations.
 
 **KOReader now**
 
-- Stores names in maps and can add/remove them. Afflictions apply direct add or
-  target effects once at acquisition.
+- Stores typed blessing and affliction records with cumulative instances and
+  active reversible add/divide/target effects. Removing an entry removes its
+  derived effect rather than attempting to reverse a prior base-stat mutation.
 
 **Still needed**
 
 - Typed blessing behavior in rolls, combat, travel, injury, and affliction
   prevention, including consumption/permanence and wildcard matching.
-- Active/reversible effects. Removing a Lua curse does not undo the ability
-  modification made when it was acquired.
-- Cumulative afflictions, attached items, lift questions/actions, divide effects,
-  duplicate rules, and serialization of full objects.
+- Attached affliction items and interactive lift questions/actions.
 - God/item effects and their ordering with curses and blessings.
 
 ### 3.10 Dice, random tables, difficulty/Rank checks, training, and reroll — **Partial**
@@ -555,7 +552,7 @@ change the `partial` and `missing` parity findings above; those remain checklist
 items for subsequent phases.
 
 The generated support inventory currently classifies the 69 observed tags as
-1 implemented, 45 partial, 6 missing, and 17 presentation/template tags. These
+1 implemented, 47 partial, 4 missing, and 17 presentation/template tags. These
 labels are the checklist baseline: completing later work should move entries
 from `partial`/`missing` to `implemented`, with a corresponding oracle test.
 
@@ -607,12 +604,22 @@ under their owning phases: ship/crew/cargo actions in Phase 4, effect and item
 filter semantics in Phase 3, and blessing-driven undo/fatality in Phases 3 and
 5. Phase 2 completion therefore does not change those tags from `partial` yet.
 
-### Phase 3 — inventory, effects, afflictions, and caches
+### Phase 3 — inventory, effects, afflictions, and caches — **Complete**
 
-1. Port item groups/tags/equipping and `EffectSet` ordering.
-2. Port use effects and item/curse/god effect activation/deactivation.
-3. Port typed blessings and cumulative afflictions.
-4. Add full item/money cache screens, limits, charges, and transfers.
+- [x] Normalize item groups and tags, track equipped weapon/armour/tools, and
+  calculate abilities through ordered active aura, wielded, and tool effects.
+- [x] Parse item effects, expose limited-use actions, and make curse/disease/
+  poison effects active records so acquisition and removal recompute values.
+- [x] Store typed ability blessings and cumulative afflictions with serialized
+  add, divide, and target effects.
+- [x] Add repeatable item/money cache screens with maximums, item limits,
+  withdrawal multiples/charges, include/exclude filters, and transactional
+  deposits and withdrawals.
+
+Phase 3's reusable inventory/effect/cache engine is complete. Specialized
+ship-cargo transfers remain in Phase 4; combat blessing consumption and roll
+undo remain in Phase 5; affliction lift prompts and unusual embedded use-effect
+programs remain explicit partial-tag follow-ups above.
 
 ### Phase 4 — ships and economy
 
