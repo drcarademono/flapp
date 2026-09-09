@@ -553,6 +553,82 @@ function Game:resume_pending_check_children()
     end
 end
 
+function Game:finish_check(data,result,description)
+    local node,a=data.node,data.node.attr; local remaining={}
+    if not truth(a.force,true) then
+        local group=data.group or data
+        for _,candidate in ipairs(self.actions) do
+            if (candidate.data.group or candidate.data)~=group then remaining[#remaining+1]=candidate end
+        end
+        self.actions=remaining
+        for _,branch in ipairs(group.branches or {}) do
+            local matched=branch.name=="success" and result>0 or branch.name=="failure" and result<=0
+            if matched then
+                if branch.attr.section then
+                    local fallback=branch.name=="success" and "Successful roll" or "Failed roll"
+                    self:add_action(plain(branch)~="" and plain(branch) or fallback,"goto",branch.attr)
+                else for _,child in ipairs(branch.children or {}) do self:walk(child,true) end end
+                break
+            end
+        end
+    end
+    if truth(a.force,true) then self.actions=remaining; self:resume_section() end
+    self.text[#self.text+1]="\n\n"..description
+    return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
+end
+
+function Game:offer_roll_blessing(kind,data,result,description,wanted)
+    local key=Inventory.find_blessing(self.state,wanted)
+    if not key and wanted~="luck" then key=Inventory.find_blessing(self.state,"luck"); wanted="luck" end
+    if not key then return false end
+    self.state.blessing_prompt={kind=kind,instruction=data.node._path,ability=data.ability,
+        result=result,description=description,wanted=wanted}
+    if self.state.progress then self.state.progress.completed[data.node._path]=nil end
+    self.actions={}
+    self:add_action("Use "..wanted.." blessing and reroll","blessing_reroll",{prompt=self.state.blessing_prompt,roll_data=data})
+    self:add_action("Accept the roll","blessing_accept",{prompt=self.state.blessing_prompt,roll_data=data})
+    return true
+end
+
+function Game:finish_random(data,result,description)
+    local node=data.node; self.actions={}
+    if truth(node.attr.force,true) then self:resume_section() end
+    self.text[#self.text+1]="\n\n"..description
+    return {title="Roll result",text=table.concat(self.text),actions=self.actions,image=self.image}
+end
+
+function Game:combat_actions()
+    local combat=self.state.combat; self.actions={}
+    self:add_action("Attack","combat_attack",{instruction=combat.owner})
+    if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=combat.owner}) end
+    for _,choice in ipairs(self.flee_choices[combat.group] or {}) do
+        self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr})
+    end
+    if combat.round>0 then self:add_combat_luck_action() end
+end
+
+function Game:add_combat_luck_action()
+    if Inventory.find_blessing(self.state,"luck") then
+        self:add_action("Use Luck blessing and reroll round","combat_luck_reroll",{instruction=self.state.combat.owner})
+    end
+end
+
+function Game:combat_blessing_prompt()
+    local combat=self.state.combat; local enemy=Combat.current(self.state)
+    if not combat or not enemy then self:combat_actions(); return end
+    if combat.phase=="blessing_defence" then
+        self.actions={}
+        self:add_action("Use Defence through Faith","combat_blessing",{kind="defence",use=true,resume_attack=true})
+        self:add_action("Do not use Defence through Faith","combat_blessing",{kind="defence",use=false,resume_attack=true}); return
+    end
+    if not combat.wrath_prompted and Inventory.find_blessing(self.state,"wrath") then
+        combat.phase="blessing_wrath"; self.actions={}
+        self:add_action("Use Divine Wrath","combat_blessing",{kind="wrath",use=true})
+        self:add_action("Do not use Divine Wrath","combat_blessing",{kind="wrath",use=false}); return
+    end
+    combat.phase=nil; self:combat_actions()
+end
+
 function Game:is_new_sentence()
     local text=table.concat(self.text):gsub("%s+$","")
     while text~="" do
@@ -1045,7 +1121,9 @@ function Game:load(book, section)
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
     if self.state.combat and self.state.combat.book==self.state.book and self.state.combat.section==self.state.section then
         local frame=self.state.execution.frames[#self.state.execution.frames]
-        if frame and frame.kind=="combat_hook" then
+        if self.state.combat.phase=="blessing_wrath" or self.state.combat.phase=="blessing_defence" then
+            self:combat_blessing_prompt()
+        elseif frame and frame.kind=="combat_hook" then
             self.actions={}
             if frame.completed then self:add_action("Continue combat","combat_continue",{instruction=self.state.combat.owner})
             else
@@ -1053,9 +1131,7 @@ function Game:load(book, section)
                 if hook then self:start_combat_hook(hook,frame.hook_kind,frame.enemy,frame.replacement,frame) end
             end
         else
-            self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
-            if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
-            for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
+            self:combat_actions()
         end
     end
     local use_frame=self.state.execution.frames[#self.state.execution.frames]
@@ -1066,6 +1142,21 @@ function Game:load(book, section)
         else
             local item=find_item(self.state,use_frame.item_id) or {id=use_frame.item_id,name=use_frame.item_name}
             self:start_use_program(item,use_frame.effect,use_frame)
+        end
+    end
+    local blessing_prompt=self.state.blessing_prompt
+    if blessing_prompt then
+        local roll_data
+        for _,candidate in ipairs(self.actions) do
+            if candidate.kind==blessing_prompt.kind and candidate.instruction==blessing_prompt.instruction then
+                roll_data=candidate.data; break
+            end
+        end
+        if roll_data then
+            if blessing_prompt.kind=="random" then roll_data={node=roll_data} end
+            self.actions={}
+            self:add_action("Use "..blessing_prompt.wanted.." blessing and reroll","blessing_reroll",{prompt=blessing_prompt,roll_data=roll_data})
+            self:add_action("Accept the roll","blessing_accept",{prompt=blessing_prompt,roll_data=roll_data})
         end
     end
     if self.restoring and pending and (pending.resume_kind=="market" or pending.resume_kind=="buy" or pending.resume_kind=="sell") then
@@ -1139,6 +1230,25 @@ function Game:_choose(index)
         self.actions={}
         for _,child in ipairs(action.data.children or {}) do self:walk(child,true) end
         return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="blessing_reroll" then
+        local prompt,data=action.data.prompt,action.data.roll_data
+        local record,error_message=self.journal:undo(); if not record then return nil,error_message end
+        self.journal:discard_future()
+        if not Inventory.use_blessing(self.state,prompt.wanted) then return nil,"That blessing is no longer available." end
+        self.state.blessing_prompt=nil
+        local node=self.nodes_by_path[prompt.instruction] or data.node
+        if prompt.kind=="random" then self.actions={{kind="random",data=node,instruction=node._path}}
+        else
+            data.node=node; self.actions={{kind="skillcheck",data=data,instruction=node._path}}
+        end
+        if self.state.progress then self.state.progress.completed[node._path]=true end
+        return self:_choose(1)
+    elseif action.kind=="blessing_accept" then
+        local prompt,data=action.data.prompt,action.data.roll_data
+        self.state.blessing_prompt=nil
+        if self.state.progress then self.state.progress.completed[prompt.instruction]=true end
+        if prompt.kind=="random" then return self:finish_random(data,prompt.result,prompt.description) end
+        return self:finish_check(data,prompt.result,prompt.description)
     elseif action.kind=="reroll" then
         local record,error_message=self.journal:undo(); if not record then return nil,error_message end
         local meta=record.metadata or {}; local a=meta.attr or {}
@@ -1206,39 +1316,23 @@ function Game:_choose(index)
         local result = node.name=="rankcheck" and (score-roll+1) or (roll-self:value(a.level))
         self.state.variables[a.var or "*difficulty*"]=result
         if a.flag then self.state.flags[a.flag]=nil end
-        local remaining={}
-        if not truth(a.force,true) then
-            local group=action.data.group or action.data
-            for _,candidate in ipairs(self.actions) do
-                if (candidate.data.group or candidate.data)~=group then remaining[#remaining+1]=candidate end
-            end
-            self.actions=remaining
-            for _,branch in ipairs(group.branches or {}) do
-                local matched=branch.name=="success" and result>0 or branch.name=="failure" and result<=0
-                if matched then
-                    if branch.attr.section then
-                        local fallback=branch.name=="success" and "Successful roll" or "Failed roll"
-                        self:add_action(plain(branch)~="" and plain(branch) or fallback,"goto",branch.attr)
-                    else
-                        for _,child in ipairs(branch.children or {}) do self:walk(child,true) end
-                    end
-                    break
-                end
-            end
+        local chosen=action.data.ability or words(a.ability)[1]
+        local wanted=result<=0 and ability_key(chosen) or "luck"
+        if self:offer_roll_blessing("skillcheck",action.data,result,description,wanted) then
+            return {title="Use blessing?",text=description,actions=self.actions,image=self.image}
         end
-        if truth(a.force,true) then self.actions=remaining end
-        if truth(a.force,true) then self:resume_section() end
-        self.text[#self.text+1]="\n\n"..description
-        return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
+        return self:finish_check(action.data,result,description)
     elseif action.kind=="random" then
         local node,a=action.data,action.data.attr
         local roll=roll_dice(self,tonumber(a.dice) or 2)+self:check_adjustment(node)
         self.last_roll=roll; self.state.variables[a.var or "*random*"]=roll
         if a.flag then self.state.flags[a.flag]=nil end
-        self.actions={}
-        if truth(a.force,true) then self:resume_section() end
-        self.text[#self.text+1]="\n\nRolled "..tostring(roll).."."
-        return {title="Roll result",text=table.concat(self.text),actions=self.actions,image=self.image}
+        local wanted=tostring(a.type or ""):lower()=="travel" and "travel" or "luck"
+        local description="Rolled "..tostring(roll).."."
+        if self:offer_roll_blessing("random",{node=node},roll,description,wanted) then
+            return {title="Use blessing?",text=description,actions=self.actions,image=self.image}
+        end
+        return self:finish_random({node=node},roll,description)
     elseif action.kind=="goto" then
         local a=action.data
         if truth(a.pay,a.shards~=nil) then self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0)); if a.item then State.remove_item(self.state,a.item,1) end end
@@ -1328,11 +1422,37 @@ function Game:_choose(index)
         local opponents=node.attr.group and self.fight_groups[node.attr.group] or {node}
         local combat=Combat.start(self,node,opponents)
         combat.book,combat.section=self.state.book,self.state.section
-        self.actions={}; self:add_action("Attack","combat_attack",{instruction=node._path})
-        if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=node._path}) end
-        for _,choice in ipairs(self.flee_choices[node.attr.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=node._path,destination=choice.attr}) end
+        self:combat_blessing_prompt()
+        return {title="Combat",text=table.concat(combat.log,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_blessing" then
+        local combat=self.state.combat; if not combat then return nil,"Combat is no longer active." end
+        if action.data.kind=="wrath" then
+            combat.wrath_prompted=true
+            if action.data.use and Inventory.use_blessing(self.state,"wrath") then
+                local enemy=Combat.current(self.state); local loss=math.min(enemy.stamina,self:roll(6))
+                enemy.stamina=enemy.stamina-loss
+                if enemy.staminalost then self.state.variables[enemy.staminalost]=(self.state.variables[enemy.staminalost] or 0)+loss end
+                combat.log[#combat.log+1]="Divine Wrath deals "..loss.." damage to "..enemy.name.."."
+            end
+        else
+            combat.defence_prompted=true
+            if action.data.use then
+                local _,blessing=Inventory.use_blessing(self.state,"defen")
+                if blessing then combat.defence_bonus=tonumber(blessing.bonus) or 3 end
+            end
+        end
+        if action.data.resume_attack then
+            combat.phase=nil; self.actions={{kind="combat_attack",data={instruction=combat.owner},instruction=combat.owner}}
+            return self:_choose(1)
+        end
+        self:combat_blessing_prompt()
         return {title="Combat",text=table.concat(combat.log,"\n"),actions=self.actions,image=self.image}
     elseif action.kind=="combat_attack" then
+        local blessing_enemy=Combat.current(self.state)
+        if not self.state.combat.defence_prompted and blessing_enemy and not blessing_enemy.playerdefence and Inventory.find_blessing(self.state,"defen") then
+            self.state.combat.phase="blessing_defence"; self:combat_blessing_prompt()
+            return {title="Use blessing?",text="Activate Defence through Faith before the first attack?",actions=self.actions,image=self.image}
+        end
         local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
         local combat=self.state.combat; local log=table.concat(combat.log,"\n")
         if status=="blocked" then
@@ -1342,6 +1462,7 @@ function Game:_choose(index)
             self.actions={}; self:add_action("Attack","combat_attack",action.data)
             if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",action.data) end
             for _,choice in ipairs(self.flee_choices[combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr}) end
+            self:add_combat_luck_action()
             return {title="Combat — round "..combat.round,text=log,actions=self.actions,image=self.image}
         end
         if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
@@ -1350,6 +1471,12 @@ function Game:_choose(index)
         local death_result=self:route_death(); if death_result then return death_result end
         self.text[#self.text+1]="\n\n"..log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated.")
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_luck_reroll" then
+        local record,error_message=self.journal:undo(); if not record then return nil,error_message end
+        self.journal:discard_future()
+        if not Inventory.use_blessing(self.state,"luck") then return nil,"That blessing is no longer available." end
+        local combat=self.state.combat; self.actions={{kind="combat_attack",data={instruction=combat.owner},instruction=combat.owner}}
+        return self:_choose(1)
     elseif action.kind=="combat_continue" then
         self.actions={}
         local frame=self.state.execution.frames[#self.state.execution.frames]
@@ -1361,6 +1488,7 @@ function Game:_choose(index)
             self:add_action("Attack","combat_attack",{instruction=combat.owner})
             if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=combat.owner}) end
             for _,choice in ipairs(self.flee_choices[combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr}) end
+            self:add_combat_luck_action()
             return {title="Combat",text=log,actions=self.actions,image=self.image}
         end
         if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end

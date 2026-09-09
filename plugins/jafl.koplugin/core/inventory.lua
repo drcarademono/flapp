@@ -144,10 +144,17 @@ end
 local function blessing_matches(key,value,wanted)
     local kind=tostring((type(value)=="table" and (value.type or value.name)) or key):lower()
     wanted=tostring(wanted or ""):lower()
+    if type(value)=="table" and value.type=="ability" then return tostring(value.ability):lower()==wanted end
     if kind=="*" or kind=="?" then return true end
     if wanted=="poison" then wanted="disease" end
     if kind:find("poison",1,true) then kind="disease" end
     return kind==wanted or kind:find(wanted,1,true)~=nil
+end
+
+function Inventory.find_blessing(state,wanted)
+    for key,value in pairs(state.blessings) do
+        if blessing_matches(key,value,wanted) then return key,value end
+    end
 end
 
 function Inventory.use_blessing(state,wanted)

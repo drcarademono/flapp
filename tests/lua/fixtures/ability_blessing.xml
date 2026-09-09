@@ -1,0 +1,4 @@
+<section id="test">
+  <difficulty ability="combat" level="20" var="test"/>
+  <set var="finished" value="1"/>
+</section>

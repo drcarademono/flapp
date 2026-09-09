@@ -16,7 +16,8 @@ function Combat.start(game,node,opponents)
             abilitydamaged=a.abilitydamaged,staminalost=a.staminalost,predamage=game:value(a.predamage or 0),
             playerfirst=truth(a.playerfirst,true),modifiers=a.modifiers}
     end
-    game.state.combat={schema=1,owner=node._path,group=node.attr.group,active=1,round=0,opponents=list,log={}}
+    local potion=require("core/inventory").consume_potion_bonus(game.state,"Combat")
+    game.state.combat={schema=1,owner=node._path,group=node.attr.group,active=1,round=0,opponents=list,log={},combat_potion=potion}
     for _,enemy in ipairs(list) do if enemy.predamage>0 then
         local loss=math.min(enemy.predamage,enemy.stamina); enemy.stamina=enemy.stamina-loss; enemy.predamage_applied=true
         game.state.combat.log[#game.state.combat.log+1]=string.format("Before combat, %s takes %d damage.",enemy.name,loss)
@@ -38,17 +39,14 @@ local function apply_enemy_loss(game,enemy,loss,replaced)
 end
 
 function Combat.enemy_turn(game,enemy,hook,start_attack)
-    local inventory=require("core/inventory"); local defence_blessing=inventory.has_blessing(game.state,"defen")
-    local defence=enemy.playerdefence and game:value(enemy.playerdefence) or game:ability("Defence")
+    local defence=enemy.playerdefence and game:value(enemy.playerdefence) or game:ability("Defence")+(game.state.combat.defence_bonus or 0)
     if tostring(enemy.modifiers or ""):lower():find("noarmour",1,true) then
         for _,item in ipairs(game.state.items) do if item.equipped and item.kind=="armour" then defence=defence-(tonumber(item.bonus) or 0) end end
     end
     for attack=start_attack or 1,enemy.attacks do
         if game.state.stamina<=0 then break end
         local roll=game:roll(6)+game:roll(6)+enemy.combat; local loss=damage(roll,defence)
-        if defence_blessing then inventory.consume_blessing(game.state,"defen"); defence_blessing=false end
         if loss>0 then
-            if inventory.consume_blessing(game.state,"injury") then loss=0 end
             local blocked,replaced
             if hook then blocked,replaced=hook("damage",enemy.path,loss) end
             if blocked then
@@ -82,7 +80,7 @@ function Combat.attack(game,hook)
     if not enemy.opened and not enemy.playerfirst and Combat.enemy_turn(game,enemy,hook) then enemy.opened=true; return "blocked" end
     enemy.opened=true
     if game.state.stamina<=0 then return "lost" end
-    local roll=game:ability("Combat"); for _=1,enemy.attackdice do roll=roll+game:roll(6) end
+    local roll=game:ability("Combat")+(combat.combat_potion or 0); for _=1,enemy.attackdice do roll=roll+game:roll(6) end
     local loss=damage(roll,enemy.defence); enemy.stamina=math.max(0,enemy.stamina-loss)
     if enemy.staminalost and loss>0 then game.state.variables[enemy.staminalost]=(game.state.variables[enemy.staminalost] or 0)+loss end
     combat.log[#combat.log+1]=string.format("You roll %d against %s's Defence %d: %s. (%d Stamina left)",roll,enemy.name,enemy.defence,loss>0 and loss.." damage" or "miss",enemy.stamina)

@@ -18,7 +18,7 @@ function State.new()
         abilities = {}, stamina = 0, max_stamina = 0, rank = 1, defence = 0, shards = 0,
         ticks = 0, items = {}, codewords = {}, flags = {}, titles = {}, gods = {},
         blessings = {}, curses = {}, diseases = {}, poisons = {}, ships = {}, caches = {}, variables = {}, history = {},
-        pending = nil, progress=nil, combat=nil, execution={frames={}}, rng={draws={},cursor=0}, undo={}, models=empty_models(), hardcore = false,
+        pending = nil, blessing_prompt=nil, progress=nil, combat=nil, execution={frames={}}, rng={draws={},cursor=0}, undo={}, models=empty_models(), hardcore = false,
     }
 end
 

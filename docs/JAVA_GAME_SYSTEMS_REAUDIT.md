@@ -551,17 +551,18 @@ all game logic. Use this second-pass list for remaining parity work.
   Item `addtag`, `removetag`, and `addbonus`, and counter-style title mutation
   attributes are now implemented; the remaining selection/chance/fatal and
   price variants keep this item open.
-- [ ] Implement the full blessing/affliction lifecycle. Disease/poison immunity,
-  permanent-versus-consumable storage, structured cumulative afflictions, and
-  named/all lifting are now implemented and behavior-tested. Ability/luck/travel
-  reroll prompts, combat defence/divine-wrath activation, and injury prevention
-  remain open.
+- [x] Implement the Java blessing/affliction lifecycle: disease/poison immunity,
+  permanent-versus-consumable storage, structured cumulative afflictions,
+  named/all lifting, ability/luck/travel reroll prompts with fresh RNG draws,
+  and combat Defence through Faith/Divine Wrath activation. Java declares storm
+  and injury blessing types but does not activate either in gameplay code.
 
 ### P3 — rolls and combat
 
 - [ ] Rebuild reroll around the original serialized roller and its owned undo
   chain, including outcomes, flags, variables, blessings, and nested mutations.
-- [ ] Complete combat caches/modifiers/blessings/skip states and hook ownership.
+- [ ] Complete combat caches/modifiers/skip states and hook ownership. Combat
+  blessing activation and combat potion lifetime are now implemented.
 - [ ] Add deterministic grouped-combat, flee, death, resurrection, and reload
   parity scenarios.
 

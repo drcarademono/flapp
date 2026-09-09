@@ -53,4 +53,9 @@ function Journal:undo()
     return record
 end
 
+function Journal:discard_future()
+    local rng=self.state.rng
+    while #rng.draws>rng.cursor do table.remove(rng.draws) end
+end
+
 return Journal

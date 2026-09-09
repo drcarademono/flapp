@@ -101,6 +101,41 @@ local function embedded_use_program()
     equal(state.models.potions.Combat,1,"ability potion bonus queued")
 end
 
+local function blessing_prompts()
+    local state=ready_state(); Inventory.bless(state,{blessing="Combat"})
+    local draws=0
+    local game=Game.new(catalog("ability_blessing.xml"),state,function() draws=draws+1; return draws<=2 and 1 or 6 end)
+    assert(game:load("1","test")); assert(game:choose(action_index(game,"skillcheck")))
+    equal(game.actions[1].kind,"blessing_reroll","failed ability blessing prompt")
+    assert(game:choose(action_index(game,"blessing_reroll")))
+    assert(state.variables.test>0); equal(state.blessings.Combat,nil,"ability blessing consumed")
+
+    local travel_state=ready_state(); Inventory.bless(travel_state,{blessing="travel"})
+    local travel=Game.new(catalog("travel_random.xml"),travel_state,function() return 2 end)
+    assert(travel:load("1","test")); assert(travel:choose(action_index(travel,"random")))
+    equal(travel.actions[1].kind,"blessing_reroll","travel blessing prompt")
+    assert(travel:choose(action_index(travel,"blessing_accept")))
+    assert(travel_state.blessings.travel,"declined travel blessing retained")
+
+    local luck_state=ready_state(); Inventory.bless(luck_state,{blessing="luck"})
+    local luck=Game.new(catalog("forced_random.xml"),luck_state,function() return 3 end)
+    assert(luck:load("1","test")); assert(luck:choose(action_index(luck,"random")))
+    equal(luck.actions[1].kind,"blessing_reroll","luck blessing prompt")
+    assert(luck:choose(action_index(luck,"blessing_accept")))
+    assert(luck_state.blessings.luck,"declined luck blessing retained")
+
+    local combat_state=ready_state()
+    Inventory.bless(combat_state,{blessing="wrath"}); Inventory.bless(combat_state,{blessing="defence",bonus="4"})
+    local fight=Game.new(catalog("combat_hook.xml"),combat_state,function() return 1 end)
+    assert(fight:load("1","test")); assert(fight:choose(action_index(fight,"fight")))
+    equal(fight.actions[1].kind,"combat_blessing","wrath activation prompt")
+    assert(fight:choose(1)); equal(combat_state.combat.opponents[1].stamina,99,"wrath damage")
+    assert(fight:choose(action_index(fight,"combat_attack")))
+    equal(fight.actions[1].kind,"combat_blessing","defence activation prompt")
+    assert(fight:choose(1)); equal(combat_state.combat.defence_bonus,4,"defence blessing bonus")
+end
+
 effects_and_afflictions()
 embedded_use_program()
+blessing_prompts()
 io.write("Lua Java-oracle scenarios passed\n")

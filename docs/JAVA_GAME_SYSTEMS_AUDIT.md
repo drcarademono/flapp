@@ -11,8 +11,9 @@
 > **Latest checklist update:** effect target/divide/add ordering, embedded
 > serializable item-use programs, potion bonuses, item tag/bonus and counter-title
 > mutations, disease/poison immunity, and structured affliction lifting are now
-> implemented. Blessing-triggered rerolls and combat blessings remain explicitly
-> open in the re-audit rather than being overstated as complete parity.
+> implemented. Ability/luck/travel reroll prompts and combat Defence/Divine
+> Wrath activation have since been completed; the re-audit remains the
+> authoritative checklist for unrelated parity gaps.
 
 - **Audit date:** 2026-09-09
 - **Reference implementation:** the Java sources under `flands/`
