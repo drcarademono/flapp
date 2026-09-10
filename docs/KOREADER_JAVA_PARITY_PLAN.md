@@ -41,6 +41,42 @@ A feature is complete only when all of the following are true:
 A module name, state field, handler branch, compatibility declaration, or static
 source assertion is **not** proof of parity.
 
+### 1.1 How to read this checklist
+
+The checkboxes are **parity acceptance gates**, not a count of Lua code written.
+An item stays unchecked until Java-generated and Lua-generated checkpoints agree
+for its complete behavior, including reload and undo where applicable. This is
+why the checklist currently has few checkmarks despite substantial runtime
+implementation: the required headless Java oracle in A1 does not exist yet, and
+the capability report correctly labels all 1,358 signatures `unverified`.
+
+Current evidence snapshot:
+
+| Measure | Current state | Meaning |
+| --- | ---: | --- |
+| Runtime implementation slices recorded below | 9 | Code exists for these slices, but each still has stated closure gaps. |
+| Normalized executable signatures inventoried | 1,358 | Structural inventory only. |
+| Signatures backed by Java/Lua checkpoint comparison | 0 | No signature is parity-proven yet. |
+| Acceptance checklist items closed | 0 of 153 | No end-to-end parity acceptance item is proven yet. |
+
+Implemented slices are tracked explicitly in the **Implementation progress
+ledger** below. A slice being implemented is real progress, but it is not the
+same assertion as passing the stricter parity gate.
+
+### 1.2 Implementation progress ledger
+
+| Slice implemented in Lua | Present behavior | What prevents acceptance closure |
+| --- | --- | --- |
+| Serializable nested execution | Persisted interaction, use-effect, combat-hook, and while records | Coroutine/path hybrid remains; B1 stepper and Java checkpoint comparison absent. |
+| RNG journal and reroll prompts | Journaled draws, rollback, ability/Luck/Travel prompts, combat reroll | Java `UndoManager.Creator` ownership and cross-reload oracle comparison absent. |
+| Abilities and effects | Derived Defence, stat bounds, ordered effects, equipment modifiers | Full source/lifetime matrix and Java-generated results absent. |
+| Inventory and item loss | Structured items, filters, wildcard/chance loss, reloadable ambiguous forced loss | Optional selection, exact split/merge, complete transfer/cache matrix, and Java oracle absent. |
+| Ships and trade | Fleet, cargo, crew, active ship, and transaction primitives | Swap/redistribution, ambiguous selection, and full trade-event parity absent. |
+| Combat | Serializable round state, hooks, blessings, flee, stalemate, and continuation | Full attack-order/modifier matrix, owned undo, and book 5/689 oracle absent. |
+| Conditions/control | Alternative `if`/`adjust` families, contextual `set`, serializable `while` | Remaining condition forms and Java comparison absent. |
+| Outcomes | Owned variables, ranges, flags/codewords, and preventing blessings | Full runner ownership/fall-through and Java comparison absent. |
+| Price and rest | Atomic price checks; fixed/full/dice/repeatable rest | Listener equivalence, Java-owned dice undo, and exhaustive oracle coverage absent. |
+
 ## 2. Required parity evidence
 
 ### 2.1 Java oracle
@@ -335,7 +371,8 @@ the following fallback outcome.
 - [ ] Complete `SetVarNode` modifier/cache/item/dock forms.
 - [ ] Complete `AdjustNode` thresholds, defaults, title values, professions,
   abilities, items, ships, cargo, and crew.
-- [x] Implement general `WhileNode` semantics on B1 frames.
+- [ ] Implement general `WhileNode` semantics on B1 frames. *(Lua implementation
+  exists; acceptance awaits the B1 stepper and Java/Lua reload comparison.)*
 - [ ] Match outcome range parsing, flags, owner association, and fall-through.
 
 ## 9. Workstream F — gain, loss, tick, rest, and price
