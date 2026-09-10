@@ -1,0 +1,5 @@
+<section name="forced-random">
+  <set var="marker" value="1"/>
+  <random dice="1" var="roll">Roll</random>
+  <set var="marker" value="2"/>
+</section>

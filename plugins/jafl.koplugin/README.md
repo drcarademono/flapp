@@ -44,11 +44,15 @@ save data are treated as data rather than evaluated as Lua code.
 
 ```sh
 make check-koreader-content
+make check-koreader-lua
 make koreader-plugin
 ```
 
 The validator parses every book XML file and checks destinations, illustrations,
 and the expected content vocabulary before a package is built.
+`check-koreader-lua` requires Lua 5.1, LuaJIT, or a newer compatible Lua and
+executes deterministic Java-oracle game/save/reload scenarios against the real
+plugin modules.
 
 See [GAME_LOGIC.md](GAME_LOGIC.md) for the ordered-execution model, Java combat
 parity rules, post-combat behavior, and supported combat-related state effects.

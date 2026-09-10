@@ -1,0 +1,6 @@
+<section name="combat-hook">
+  <fight name="Oracle" combat="0" defence="99" stamina="100"/>
+  <fightround>
+    <difficulty ability="scouting" level="3" var="roundcheck">Stay upright</difficulty>
+  </fightround>
+</section>

@@ -1,5 +1,14 @@
 local XML = require("content/xml")
+local Compatibility = require("content/compatibility")
+local Combat = require("core/combat")
+local Character = require("core/character")
+local Expression = require("core/expression")
+local Inventory = require("core/inventory")
+local Journal = require("core/journal")
+local Rules = require("core/rules")
+local Ships = require("core/ships")
 local State = require("core/state")
+local Stats = require("core/stats")
 
 local Game = {}; Game.__index = Game
 local function truth(v, default)
@@ -18,15 +27,36 @@ local function plain(node)
     local out = {}; for _, child in ipairs(node.children or {}) do out[#out+1] = plain(child) end
     return normalize_text(table.concat(out)):match("^%s*(.-)%s*$")
 end
-local function item_from(a)
-    return { name=a.name or "item", quantity=tonumber(a.quantity or a.multiple) or 1, bonus=tonumber(a.bonus),
-        type=a.type, tags=a.tags, weapon=a.weapon, armour=a.armour }
+local function item_from(a,node)
+    local node_kind=node and (node.name=="weapon" or node.name=="armour" or node.name=="tool") and node.name or nil
+    local item={ name=a.name or a.item or "item", quantity=tonumber(a.quantity or a.multiple) or 1, bonus=tonumber(a.bonus),
+        kind=node_kind or a.type, ability=a.ability, group=a.group, tags=a.tags,
+        weapon=node_kind=="weapon" or a.weapon, armour=node_kind=="armour" or a.armour, tool=node_kind=="tool" or a.tool }
+    item.effects={}
+    for _,child in ipairs(node and node.children or {}) do if type(child)=="table" and child.name=="effect" then
+        local program={}; for _,action in ipairs(child.children or {}) do
+            if type(action)=="table" and action.name~="desc" then program[#program+1]=State.copy(action) end
+        end
+        item.effects[#item.effects+1]={kind=child.attr.type or "aura",ability=child.attr.ability,
+            operation=child.attr.target and "target" or child.attr.divide and "divide" or "add",
+            value=child.attr.bonus or child.attr.divide or child.attr.target,
+            uses=child.attr.uses or (child.attr.ability and 1 or nil),
+            text=child.attr.text or child.attr.description,verb=child.attr.verb,
+            blessing=child.attr.blessing,disposable=truth(child.attr.disposable,true),program=program}
+    end end
+    return item
 end
 
 function Game.new(catalog, state, random)
-    return setmetatable({ catalog=catalog, state=state or State.new(), random=random or math.random,
+    local game=setmetatable({ catalog=catalog, state=state or State.new(),
         text={}, actions={}, errors={}, steps=0 }, Game)
+    game.journal=Journal.new(game.state,random)
+    return game
 end
+
+function Game:roll(sides) return self.journal:draw(sides) end
+function Game:ability(name,modifier) return Inventory.ability(self.state,tostring(name or ""):gsub("^%l",string.upper),modifier) end
+function Game:set_fixed_rules(value) return Rules.set_fixed(self.state,value) end
 
 function Game:value(v)
     if v == nil then return 0 end
@@ -35,33 +65,89 @@ function Game:value(v)
     local sign, key = v:match("^([+-]?)([%w_*.-]+)$")
     if key then
         n = self.state.variables[key]
-        if n == nil then n = self.state.abilities[key:gsub("^%l", string.upper)] end
+        if n == nil and self.state.abilities[key:gsub("^%l", string.upper)]~=nil then n=self:ability(key) end
         n = n or 0
         return sign == "-" and -n or n
     end
     local dice, sides, add = v:match("^(%d+)[dD](%d+)([+-]?%d*)$")
     if dice then
         local total = tonumber(add) or 0
-        for _=1,tonumber(dice) do total = total + self.random(tonumber(sides)) end
+        for _=1,tonumber(dice) do total = total + self:roll(tonumber(sides)) end
         return total
     end
-    return 0
+    return Expression.evaluate(v,function(key)
+        local lower=key:lower()
+        if lower=="stamina" then return self.state.stamina end
+        if lower=="shards" then return self.state.shards end
+        if lower=="rank" then return self.state.rank end
+        if lower=="defence" then return self:ability("Defence") end
+        if lower=="weapon" then
+            local id=self.state.models.equipment.weapon
+            for _,item in ipairs(self.state.items) do if item.id==id or item.equipped and item.kind=="weapon" then return tonumber(item.bonus) or 0 end end
+            return 0
+        end
+        if lower=="armour" then
+            local id=self.state.models.equipment.armour
+            for _,item in ipairs(self.state.items) do if item.id==id or item.equipped and item.kind=="armour" then return tonumber(item.bonus) or 0 end end
+            return 0
+        end
+        return self.state.variables[key] or self:ability(key) or 0
+    end)
+end
+
+function Game:set_value(attributes)
+    local a=attributes or {}
+    if a.codeword then return tonumber(self.state.codewords[a.codeword]) or (self.state.codewords[a.codeword] and 1 or 0) end
+    local source=self.state
+    if a.cache then source=self.state.caches[a.cache] or State.new_cache() end
+    local function resolve(identifier)
+        local key=identifier:lower()
+        if key=="matches" then return #Inventory.matching_indices(source,a,true) end
+        if key=="weapon" or key=="armour" then
+            local indices=Inventory.matching_indices(source,a,true)
+            if #indices==1 and source.items[indices[1]].kind==key then return tonumber(source.items[indices[1]].bonus) or 0 end
+            if not a.cache then
+                local equipped=self.state.models.equipment[key]
+                for _,item in ipairs(self.state.items) do if item.id==equipped and item.kind==key then return tonumber(item.bonus) or 0 end end
+            end
+            return 0
+        end
+        if key=="stamina" then return a.modifier and self.state.max_stamina or self.state.stamina end
+        if key=="shards" then return tonumber(source.shards) or 0 end
+        if key=="crew" then
+            local ships=Ships.find(self.state,nil,true)
+            return #ships==1 and self.state.models.fleet.ships[ships[1]].crew.quality or 0
+        end
+        for _,ability in ipairs(State.ability_names) do if ability:lower()==key then return self:ability(ability,a.modifier) end end
+        if key=="rank" then return self:ability("Rank",a.modifier) end
+        return tonumber(self.state.variables[identifier] or self.state.variables[key]) or 0
+    end
+    return Expression.evaluate(a.value or a.amount or "0",resolve)
+end
+
+function Game:apply_set(node)
+    local a=node.attr or {}
+    if a.var or a.name then self.state.variables[a.name or a.var]=self:set_value(a) end
+    if a.dock then
+        for _,index in ipairs(Ships.find(self.state,nil,true)) do self.state.models.fleet.ships[index].docked=a.dock end
+    end
+    if self.state.progress then self.state.progress.applied[node._path]=true end
 end
 
 function Game:condition(a)
     local s, ok = self.state, true
     if a.codeword then
         ok = a.codeword:find("&",1,true) and true or false
-        for _,w in ipairs(words(a.codeword)) do if ok then ok = s.codewords[w] == true else ok = ok or s.codewords[w] == true end end
+        for _,w in ipairs(words(a.codeword)) do if ok then ok = s.codewords[w] ~= nil else ok = ok or s.codewords[w] ~= nil end end
     end
     if ok and a.title then ok=false; for _,v in ipairs(words(a.title)) do ok=ok or s.titles[v] end end
     if ok and a.god then ok = s.gods[a.god] == true end
     if ok and a.profession then ok = s.profession:lower() == a.profession:lower() end
     if ok and a.gender then ok = s.gender:sub(1,1):lower() == a.gender:sub(1,1):lower() end
-    if ok and a.item then ok = State.item_count(s, a.item) >= (tonumber(a.multiple) or 1) end
-    if ok and a.weapon then ok = State.has_item(s,a.weapon=="*" and nil or a.weapon,"weapon",a.bonus,a.tags) end
-    if ok and a.armour then ok = State.has_item(s,a.armour=="*" and nil or a.armour,"armour",a.bonus,a.tags) end
-    if ok and a.tool then ok = State.has_item(s,a.tool=="*" and nil or a.tool,"tool",a.bonus,a.tags) end
+    if ok and a.item then ok = Inventory.count(s,a) >= (tonumber(a.multiple) or 1) end
+    if ok and a.weapon then ok = Inventory.count(s,a)>0 end
+    if ok and a.armour then ok = Inventory.count(s,a)>0 end
+    if ok and a.tool then ok = Inventory.count(s,a)>0 end
     if ok and a.shards then
         local available=s.shards
         if a.cache then available=(s.caches[a.cache] and s.caches[a.cache].shards) or 0 end
@@ -83,8 +169,24 @@ function Game:condition(a)
     if ok and a.poison then ok = s.poisons and s.poisons[a.poison] ~= nil end
     if ok and a.resurrection then ok = s.resurrection ~= nil end
     if ok and a.book then ok = self.catalog.books[tostring(a.book)] and self.catalog.books[tostring(a.book)].installed end
+    if ok and a.rule then ok = Rules.active(self.state,a.rule) end
+    if ok and a.ship then
+        ok=#Ships.find(s,a.ship=="*" and nil or a.ship,true)>0
+    end
+    if ok and a.crew then
+        local active=self.state.models.fleet.active; local ship=active and self.state.models.fleet.ships[active]
+        ok=ship~=nil and (tostring(ship.crew.quality)==tostring(a.crew) or ship.crew.name==a.crew)
+    end
+    if ok and a.docked then
+        local active=self.state.models.fleet.active; local ship=active and self.state.models.fleet.ships[active]
+        ok=ship~=nil and tostring(ship.docked)==tostring(a.docked)
+    end
+    if ok and a.cargo then
+        local ship=Ships.active(s); ok=false
+        if ship then for _,cargo in ipairs(ship.cargo) do if a.cargo=="*" or cargo:lower():match("^"..a.cargo:lower()) then ok=true; break end end end
+    end
     if ok and a.ability then
-        local score=s.abilities[a.ability:gsub("^%l", string.upper)] or 0
+        local score=self:ability(a.ability,a.modifier)
         if a.greaterthan then ok=score>self:value(a.greaterthan)
         elseif a.lessthan then ok=score<self:value(a.lessthan)
         elseif a.equals then ok=score==self:value(a.equals) end
@@ -94,6 +196,55 @@ function Game:condition(a)
     -- here: when the negated result is false, `or ok` changes it back to true.
     if truth(a["not"],false) then return not ok end
     return ok
+end
+
+-- IfNode.meetsConditions() treats distinct condition families as alternatives;
+-- only the values inside a codeword/title list use their authored AND/OR join.
+function Game:if_condition(a)
+    local s=self.state; local tested=false
+    local function yes(value) tested=true; return value and true or false end
+    local function success() return not truth(a["not"],false) end
+    local function compared(value)
+        if a.greaterthan then return value>self:value(a.greaterthan) end
+        if a.lessthan then return value<self:value(a.lessthan) end
+        if a.equals then return value==self:value(a.equals) end
+        return value~=nil
+    end
+    if a.codeword then
+        local joined=a.codeword:find("&",1,true)~=nil; local matched=joined
+        for _,word in ipairs(words(a.codeword)) do
+            if joined then matched=matched and s.codewords[word]~=nil else matched=matched or s.codewords[word]~=nil end
+        end
+        if yes(matched) then return success() end
+    end
+    if a.god and yes((a.god=="*" and next(s.gods)~=nil) or (a.god=="" and next(s.gods)==nil) or s.gods[a.god]) then return success() end
+    if a.safeaddgod then
+        local safe=not s.gods[a.safeaddgod] and (next(s.gods)==nil)
+        if yes(safe) then return success() end
+    end
+    if a.title then
+        local joined=a.title:find("&",1,true)~=nil; local matched=joined
+        for _,title in ipairs(words(a.title)) do if joined then matched=matched and s.titles[title]~=nil else matched=matched or s.titles[title]~=nil end end
+        if yes(matched) then return success() end
+    end
+    if a.ticks~=nil then
+        local section_ticks=s.models.section_ticks[s.book..":"..s.section] or 0
+        if yes(section_ticks==self:value(a.ticks)) then return success() end
+    end
+    if a.name~=nil and yes(compared(s.codewords[a.name])) then return success() end
+    if a.var~=nil and yes(compared(s.variables[a.var])) then return success() end
+    if a.ability~=nil and yes(compared(self:ability(a.ability,a.modifier))) then return success() end
+    local probes={"shards","book","gender","item","weapon","armour","tool","blessing","curse","disease","poison","resurrection","docked","ship","crew","cargo","profession","dead"}
+    for _,probe in ipairs(probes) do if a[probe]~=nil then
+        local one=State.copy(a)
+        for _,other in ipairs(probes) do if other~=probe then one[other]=nil end end
+        one["not"]=nil
+        if yes(self:condition(one)) then return not truth(a["not"],false) end
+    end end
+    local result=false
+    if not tested then result=true end
+    if truth(a["not"],false) then return not result end
+    return result
 end
 
 local function destination_matches_life_state(state, attributes)
@@ -107,30 +258,102 @@ end
 function Game:mutate(name, a, direction)
     local s = self.state
     if a.staminato then
-        s.stamina=math.max(0,math.min(s.max_stamina,self:value(a.staminato)))
+        local target=self:value(a.staminato)
+        if target<s.stamina then Stats.damage(s,s.stamina-target) else Stats.heal(s,target-s.stamina) end
     end
+    if a.stamina and direction<0 then Stats.damage(s,self:value(a.stamina)) end
     if (a.shards=="*" or a.gold=="*") and direction<0 then
         s.shards=0
     end
     if direction<0 and (a.item=="*" or a.weapon=="*" or a.armour=="*" or a.tool=="*") then
-        State.remove_matching_items(s,a)
+        local loss_items=self:loss_source(a)
+        if a.chance then
+            local numerator,denominator=tostring(a.chance):match("^(%d+)%s*/%s*(%d+)$")
+            numerator,denominator=tonumber(numerator),tonumber(denominator)
+            if numerator and denominator and denominator>0 then
+                for index=#loss_items,1,-1 do
+                    local item=loss_items[index]
+                    if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then
+                        local lost=0
+                        for _=1,item.quantity or 1 do if self:roll(denominator)<=numerator then lost=lost+1 end end
+                        if lost>0 then self:remove_loss_item(a,item.id,lost) end
+                    end
+                end
+            end
+        else
+            for index=#loss_items,1,-1 do
+                local item=loss_items[index]
+                if Inventory.matches(item,a) and not Inventory.tags(item.tags).keep then self:remove_loss_item(a,item.id,item.quantity) end
+            end
+        end
+    end
+    if direction<0 and a.itemat then
+        local items=self:loss_source(a); local wanted=self:value(a.itemat); local seen=0
+        for _,item in ipairs(items) do if item.kind~="money" then
+            seen=seen+1; if seen==wanted then self:remove_loss_item(a,item.id,1); break end
+        end end
+    end
+    if a.addtag or a.removetag or a.addbonus then
+        for _,item in ipairs(s.items) do if Inventory.matches(item,a) then
+            if a.addtag then item.tags[ tostring(a.addtag):lower() ]=true end
+            if a.removetag then item.tags[ tostring(a.removetag):lower() ]=nil end
+            if a.addbonus then item.bonus=(tonumber(item.bonus) or 0)+self:value(a.addbonus) end
+            break
+        end end
+        return
+    end
+    if a.special then
+        local special=tostring(a.special):lower()
+        if special:match("^attack") then s.models.combat_bonus.attack=self:value(a.bonus or 0)
+        elseif special:match("^defence") then s.models.combat_bonus.defence=self:value(a.bonus or 3)
+        elseif special=="armourlock" then s.models.equipment.armour_locked=true
+        elseif special=="weaponlock" then s.models.equipment.weapon_locked=true
+        elseif special=="difficultycurse" then s.models.stats.difficulty_dice=1
+        elseif special=="difficultyrestore" then s.models.stats.difficulty_dice=math.max(2,s.models.stats.difficulty_dice or 2)
+        elseif special:match("^godless") then s.godless=true
+        elseif a.cache and (special=="lock" or special=="freeze" or special=="unlock" or special=="thaw") then
+            local cache=Inventory.cache(s,a.cache,a)
+            cache.rules.frozen=special=="lock" or special=="freeze"
+        end
+        return
     end
     local amount = self:value(a.amount or a.value or a.stamina or 1) * direction
+    if a.ship then
+        if direction>0 then Ships.new(s,a) else Ships.remove(s,a.ship) end
+        return
+    elseif a.cargo then
+        local ship=Ships.active(s)
+        if direction>0 then Ships.add_cargo(ship,a.cargo,a.quantity) else Ships.remove_cargo(ship,a.cargo,a.quantity or a.amount) end
+        return
+    elseif a.crew then
+        local ship=Ships.active(s)
+        if direction>0 and not ship then Ships.new(s,{ship="barque",crew=a.crew})
+        elseif tonumber(a.crew) then Ships.adjust_crew(ship,tonumber(a.crew)*direction)
+        elseif ship then ship.crew.quality=Ships.crew(a.crew) end
+        return
+    end
     local ability = a.ability and a.ability:gsub("^%l", string.upper)
-    if ability == "Stamina" then s.stamina = math.max(0, math.min(s.max_stamina, s.stamina + amount))
-    elseif ability == "Rank" then
-        s.rank = math.max(0, s.rank + amount)
-        s.max_stamina=math.max(1,s.max_stamina+amount); s.stamina=math.min(s.stamina,s.max_stamina)
-    elseif ability then s.abilities[ability] = math.max(0, math.min(12, (s.abilities[ability] or 0) + amount))
+    if ability=="All" then
+        for _,stat_name in ipairs(State.ability_names) do Stats.adjust(s,stat_name,amount,truth(a.fatal,false)) end
+    elseif ability and ability~="?" then
+        Stats.adjust(s,ability,amount,truth(a.fatal,false))
     elseif a.shards or a.gold or name == "adjustmoney" then s.shards = math.max(0, s.shards + self:value(a.shards or a.gold or a.amount) * direction)
     elseif a.codeword then for _,v in ipairs(words(a.codeword)) do s.codewords[v] = direction > 0 or nil end
-    elseif a.title then for _,v in ipairs(words(a.title)) do s.titles[v] = direction > 0 or nil end
+    elseif name=="tick" and a.name then s.codewords[a.name]=(tonumber(s.codewords[a.name]) or 0)+self:value(a.amount or a.count or 1)
+    elseif a.title then
+        for _,v in ipairs(words(a.title)) do
+            if a.titlepattern then
+                local current=tonumber(s.titles[v]) or self:value(a.titlevalue or 1)
+                s.titles[v]=direction>0 and current+self:value(a.titleadjust or a.titaladjust or 1) or nil
+            else s.titles[v] = direction > 0 or nil end
+        end
     elseif a.god then s.gods[a.god] = direction > 0 or nil
+    elseif a.profession and direction>0 then s.profession=words(a.profession)[1]:gsub("^%l",string.upper)
     elseif a.flag then s.flags[a.flag] = direction > 0 or nil
-    elseif a.blessing then s.blessings[a.blessing]=direction>0 and (tonumber(a.bonus) or true) or nil
-    elseif a.curse then s.curses[a.curse]=direction>0 and true or nil
-    elseif a.disease then s.diseases=s.diseases or {}; s.diseases[a.disease]=direction>0 and true or nil
-    elseif a.poison then s.poisons=s.poisons or {}; s.poisons[a.poison]=direction>0 and true or nil
+    elseif a.blessing then if direction>0 then Inventory.bless(s,a) else s.blessings[a.blessing]=nil end
+    elseif a.curse then if direction<0 then Inventory.lift(s,"curse",a.curse) end
+    elseif a.disease then if direction<0 then Inventory.lift(s,"disease",a.disease) end
+    elseif a.poison then if direction<0 then Inventory.lift(s,"poison",a.poison) end
     elseif a.resurrection then s.resurrection=direction>0 and State.copy(a) or nil
     elseif a.item or a.name or a.weapon or a.armour or a.tool then
         local itemname=a.item or a.name or a.weapon or a.armour or a.tool
@@ -138,13 +361,166 @@ function Game:mutate(name, a, direction)
             local item=item_from(a); item.name=itemname
             item.weapon=a.weapon~=nil or item.weapon; item.armour=a.armour~=nil or item.armour; item.tool=a.tool~=nil
             State.add_item(s,item)
-        else State.remove_matching_items(s,a,self:value(a.multiple or 1)) end
+        else
+            local remaining=self:value(a.multiple or 1); local indices,items=self:loss_indices(a)
+            for index=#indices,1,-1 do
+                local item=items[indices[index]]; local take=math.min(item.quantity or 1,remaining)
+                self:remove_loss_item(a,item.id,take); remaining=remaining-take; if remaining<=0 then break end
+            end
+        end
     end
 end
 
+function Game:apply_tick_count(attributes)
+    local count=attributes.count and self:value(attributes.count) or (next(attributes)==nil and 1 or 0)
+    if count~=0 then
+        self.state.ticks=self.state.ticks+count
+        local key=self.state.book..":"..self.state.section
+        self.state.models.section_ticks[key]=(self.state.models.section_ticks[key] or 0)+count
+    end
+end
+
+function Game:loss_source(attributes)
+    if attributes.cache then
+        local cache=self.state.caches[attributes.cache]
+        return cache and cache.items or {},cache
+    end
+    return self.state.items,self.state
+end
+
+function Game:loss_attributes(node)
+    local attributes=State.copy(node.attr)
+    if attributes.ability and attributes.amount then
+        attributes.amount=self:value(attributes.amount)+self:check_adjustment(node)
+    end
+    return attributes
+end
+
+function Game:loss_indices(attributes)
+    local items=self:loss_source(attributes); local wrapper={items=items}
+    return Inventory.matching_indices(wrapper,attributes,false),items
+end
+
+function Game:show_loss_selection(node)
+    local selection=self.state.selection; local indices,items=self:loss_indices(selection.attributes)
+    self.actions={}
+    for _,index in ipairs(indices) do
+        local item=items[index]
+        self:add_action("Lose "..item.name,"loss_select",{item_id=item.id,instruction=node._path})
+    end
+end
+
+function Game:remove_loss_item(attributes,id,quantity)
+    local items,owner=self:loss_source(attributes); quantity=quantity or 1
+    for index,item in ipairs(items) do if item.id==id then
+        local take=math.min(item.quantity or 1,quantity); item.quantity=(item.quantity or 1)-take
+        if item.quantity<=0 then
+            if owner==self.state then Inventory.unequip(self.state,item) end
+            table.remove(items,index)
+        end
+        return take
+    end end
+    return 0
+end
+
+-- PriceNode is an availability-sensitive action in Java: an already-paid
+-- flag, insufficient money, or a missing item disables it.  Payment itself is
+-- atomic, and deliberately refuses an ambiguous item match so the player can
+-- disambiguate their inventory before trying again.
+function Game:price_details(node)
+    local a=node.attr or {}
+    local details={cost=a.shards and self:value(a.shards) or 0,indices={}}
+    if a.item or a.weapon or a.armour or a.tool then
+        details.indices=Inventory.matching_indices(self.state,a,true)
+    end
+    details.available=(not a.flag or not self.state.flags[a.flag]) and
+        self.state.shards>=details.cost and
+        (not (a.item or a.weapon or a.armour or a.tool) or #details.indices>0)
+    return details
+end
+
+function Game:pay_price(node)
+    local details=self:price_details(node)
+    if not details.available then return false,"That price is no longer available." end
+    if #details.indices>1 then
+        return false,"Which item do you want to pay with? Select one in your possessions and try again."
+    end
+    if #details.indices==1 then
+        local item=self.state.items[details.indices[1]]
+        Inventory.remove_by_id(self.state,item.id,1)
+    end
+    self.state.shards=self.state.shards-details.cost
+    if node.attr.flag then self.state.flags[node.attr.flag]=true end
+    return true,details.cost
+end
+
+function Game:rest_details(node)
+    local a=node.attr or {}; local cost=self:value(a.shards or 0)
+    local once=truth(a.once,cost==0)
+    local used=once and self.state.progress and self.state.progress.applied[node._path]
+    local missing=math.max(0,self.state.max_stamina-self.state.stamina)
+    local fixed
+    if not a.stamina then fixed=-1
+    elseif not tostring(a.stamina):match("^%d+[dD]%d*$") then fixed=self:value(a.stamina) end
+    local max_uses=1
+    if not once and fixed and fixed>0 and cost>0 then
+        max_uses=math.min(math.floor(self.state.shards/cost),math.floor(missing/fixed))
+    end
+    return {cost=cost,once=once,used=used,missing=missing,fixed=fixed,
+        max_uses=max_uses,available=not used and missing>0 and self.state.shards>=cost}
+end
+
+function Game:rest_amount(node)
+    local value=node.attr and node.attr.stamina
+    if value==nil then return -1 end
+    local dice,sides=tostring(value):match("^(%d+)[dD](%d*)$")
+    if dice then
+        sides=tonumber(sides) or 6; local total=0
+        for _=1,tonumber(dice) do total=total+self:roll(sides) end
+        return total
+    end
+    return self:value(value)
+end
+
+function Game:perform_rest(node,uses)
+    local details=self:rest_details(node); uses=tonumber(uses) or 1
+    if not details.available or uses<1 or uses>details.max_uses then
+        return false,"You cannot rest that many times."
+    end
+    -- Dice healing is rolled once in Java and therefore cannot be multiplied
+    -- through the paid multi-day chooser.
+    local amount=self:rest_amount(node)
+    if tostring(node.attr.stamina or ""):match("^%d+[dD]%d*$") then uses=1 end
+    local charge=details.cost*uses
+    if self.state.shards<charge then return false,"You cannot afford to rest." end
+    self.state.shards=self.state.shards-charge
+    local before=self.state.stamina
+    if amount<0 then self.state.stamina=self.state.max_stamina
+    else self.state.stamina=math.min(self.state.max_stamina,before+amount*uses) end
+    if details.once and self.state.progress then self.state.progress.applied[node._path]=true end
+    return true,self.state.stamina-before,charge
+end
+
+function Game:start_loss_selection(node)
+    local a=node.attr; local indices,items=self:loss_indices(a)
+    if self.state.selection and self.state.selection.kind=="loss" and self.state.selection.instruction==node._path then
+        self:show_loss_selection(node); self:pause_section(); return true
+    end
+    local needed=math.min(self:value(a.multiple or 1),Inventory.count({items=items},a))
+    if needed<=0 or #indices<=1 or Inventory.same_kind(items,indices) then return false end
+    self.state.selection={schema=1,kind="loss",instruction=node._path,attributes=State.copy(a),remaining=needed}
+    if self.state.progress then self.state.progress.applied[node._path]=nil end
+    self:show_loss_selection(node); self:pause_section(); return true
+end
+
 function Game:add_action(label, kind, data)
-    local action = { label=label, kind=kind, data=data }
+    local source=type(data)=="table" and (data.node or data.market or (data.name and data.children and data)) or nil
+    local action = { label=label, kind=kind, data=data, instruction=data and data.instruction or source and source._path or self.current_node and self.current_node._path }
     self.actions[#self.actions+1] = action
+    if kind=="skillcheck" or kind=="random" or kind=="fight" or kind=="training" or kind=="goto" or
+            kind=="market" or kind=="return" or kind=="resurrection" then
+        self.blocking_node=source or self.current_node
+    end
     return action
 end
 
@@ -165,14 +541,58 @@ function Game:pause_section()
     -- KOReader uses LuaJIT, whose optional second coroutine.running() result is
     -- not portable across its Lua 5.1/5.2 compatibility configurations.  The
     -- runner identity is unambiguous and works in every supported build.
-    if running and running==self.section_runner then coroutine.yield() end
+    if running and running==(self.active_runner or self.section_runner) then
+        self.pause_serial=(self.pause_serial or 0)+1
+        local node=self.blocking_node or self.current_node
+        local frames=self.state.execution and self.state.execution.frames
+        if frames and frames[#frames] then frames[#frames].instruction=node and node._path or nil end
+        self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,
+            instruction=node and node._path or nil,actions={}}
+        for _,action in ipairs(self.actions) do
+            self.state.pending.actions[#self.state.pending.actions+1]={kind=action.kind,label=action.label,
+                instruction=action.instruction}
+        end
+        coroutine.yield()
+    end
 end
 
 function Game:resume_section()
-    if not self.section_runner or coroutine.status(self.section_runner)=="dead" then return true end
-    local ok,err=coroutine.resume(self.section_runner)
+    local runner=self.active_runner or self.section_runner
+    if not runner or coroutine.status(runner)=="dead" then return true end
+    local ok,err=coroutine.resume(runner)
     if not ok then error(err) end
-    return coroutine.status(self.section_runner)=="dead"
+    local finished=coroutine.status(runner)=="dead"
+    if finished and self.nested_outer_runner then
+        self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame then frame.completed=true end
+        if frame and frame.kind=="use_effect" then
+            self:add_action("Finish using "..(frame.item_name or "item"),"finish_use_effect",{item_id=frame.item_id})
+        else
+            self:add_action("Continue combat","combat_continue",{instruction=self.state.combat and self.state.combat.owner})
+        end
+    end
+    return finished
+end
+
+function Game:start_use_program(item,effect,reuse_frame)
+    local frame=reuse_frame or {kind="use_effect",item_id=item.id,item_name=item.name,effect=State.copy(effect)}
+    if not reuse_frame then self.state.execution.frames[#self.state.execution.frames+1]=frame end
+    self.nested_outer_runner=self.active_runner or self.section_runner; self.actions={}
+    local runner=coroutine.create(function()
+        for _,child in ipairs(effect.program or {}) do
+            local count,serial=#self.actions,self.pause_serial or 0
+            self:walk(child,true)
+            if #self.actions>count and (self.pause_serial or 0)==serial then self:pause_section() end
+        end
+    end)
+    self.active_runner=runner
+    local ok,err=coroutine.resume(runner); if not ok then error(err) end
+    if coroutine.status(runner)=="dead" then
+        self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
+        table.remove(self.state.execution.frames); return false
+    end
+    return true
 end
 
 local function ability_key(name)
@@ -181,14 +601,8 @@ end
 
 local function roll_dice(game, count)
     local total = 0
-    for _=1,count do total = total + game.random(6) end
+    for _=1,count do total = total + game:roll(6) end
     return total
-end
-
--- FightNode.java does not use a fixed weapon/enemy damage value.  A successful
--- attack deals the entire amount by which (dice + COMBAT) beats Defence.
-local function combat_damage(roll, defence)
-    return math.max(0, roll - defence)
 end
 
 local function range_matches(spec, value)
@@ -202,21 +616,71 @@ local function range_matches(spec, value)
     return value==tonumber(spec)
 end
 
+function Game:outcome_match(node,parent_value)
+    local a=node.attr or {}; local value=parent_value
+    if a.var then value=self.state.variables[a.var] end
+    if a.range and (value==nil or not range_matches(a.range,value)) then return false,false end
+    local conditions=State.copy(a)
+    conditions.range=nil; conditions.var=nil; conditions.section=nil
+    conditions.blessing=nil -- a matching blessing prevents, rather than enables, an outcome
+    if not self:condition(conditions) then return false,false end
+    return true,a.blessing and Inventory.find_blessing(self.state,a.blessing)~=nil
+end
+
 local function pair_fight_nodes(root)
-    local fights,damage,rounds,flees={},{},{},{}
-    local function visit(node,parent,index)
+    local fights,damage,rounds,flees,by_path,groups,flee_choices={},{},{},{},{},{},{}
+    local function visit(node,parent,index,path)
         if type(node)~="table" then return end
         node._parent,node._index=parent,index
+        node._path=path or "1"
+        by_path[node._path]=node
         if node.name=="fight" then fights[#fights+1]=node
         elseif node.name=="fightdamage" then damage[#damage+1]=node
         elseif node.name=="fightround" then rounds[#rounds+1]=node
         elseif node.name=="flee" then flees[#flees+1]=node end
-        for child_index,child in ipairs(node.children or {}) do visit(child,node,child_index) end
+        if node.name=="choice" and node.attr.flee then flee_choices[node.attr.flee]=flee_choices[node.attr.flee] or {}; flee_choices[node.attr.flee][#flee_choices[node.attr.flee]+1]=node end
+        for child_index,child in ipairs(node.children or {}) do
+            if type(child)=="table" then visit(child,node,child_index,(path or "1").."."..child_index) end
+        end
     end
-    visit(root,nil,nil)
+    visit(root,nil,nil,"1")
     for i,fight in ipairs(fights) do
         fight.fightdamage=damage[i]; fight.fightround=rounds[i]; fight.flee_node=flees[i]
+        if fight.attr.group then groups[fight.attr.group]=groups[fight.attr.group] or {}; groups[fight.attr.group][#groups[fight.attr.group]+1]=fight end
     end
+    return by_path,groups,flee_choices
+end
+
+function Game:start_combat_hook(hook,kind,path,replacement,reuse_frame)
+    local frame=reuse_frame or {kind="combat_hook",hook_kind=kind,enemy=path,hook_path=hook._path,replacement=replacement}
+    if not reuse_frame then self.state.execution.frames[#self.state.execution.frames+1]=frame end
+    self.nested_outer_runner=self.active_runner or self.section_runner
+    self.actions={}
+    local runner=coroutine.create(function()
+        for _,child in ipairs(hook.children or {}) do
+            local action_count,pause_serial=#self.actions,self.pause_serial or 0
+            self:walk(child,true)
+            -- A blocker directly owned by a hook has no enclosing SectionNode
+            -- to perform the deferred pause used by ordinary section prose.
+            if #self.actions>action_count and (self.pause_serial or 0)==pause_serial then self:pause_section() end
+        end
+    end)
+    self.active_runner=runner
+    local ok,error_message=coroutine.resume(runner); if not ok then error(error_message) end
+    if coroutine.status(runner)=="dead" then
+        self.active_runner=self.nested_outer_runner; self.nested_outer_runner=nil
+        table.remove(self.state.execution.frames)
+        return false
+    end
+    return true
+end
+
+function Game:combat_hook(kind,path)
+    local node=self.nodes_by_path[path]; if not node then return end
+    local hook=kind=="damage" and node.fightdamage or kind=="round" and node.fightround or node.flee_node
+    if not hook then return false,false end
+    local replacement=kind=="damage" and tostring(hook.attr.type or ""):match("^repl")~=nil
+    return self:start_combat_hook(hook,kind,path,replacement),replacement
 end
 
 function Game:preview_after(node)
@@ -245,12 +709,52 @@ function Game:visible_text()
     return table.concat(self.text)..(self.preview_text or "")
 end
 
+function Game:route_death()
+    if self.state.profession=="" or not Stats.dead(self.state) or #self.actions>0 then return end
+    if self.state.resurrection then
+        self:add_action("Use arranged resurrection","resurrect",self.state.resurrection)
+        return
+    end
+    local death=self.catalog.books[self.state.book].properties.Death
+    if death and tostring(death)~=self.state.section then return self:load(self.state.book,death) end
+end
+
+function Game:adjustment(attributes)
+    local a=attributes or {}; local matched=false; local derived
+    local function comparison(value)
+        if a.greaterthan then return value>tonumber(a.greaterthan) end
+        if a.lessthan then return value<tonumber(a.lessthan) end
+        return true
+    end
+    if a.god and ((a.god=="*" and next(self.state.gods)~=nil) or self.state.gods[a.god]) then matched=true end
+    if a.profession and self.state.profession:lower()==a.profession:lower() then matched=true end
+    if (a.item or a.weapon or a.armour or a.tool) and Inventory.count(self.state,a)>0 then matched=true end
+    if a.codeword and self.state.codewords[a.codeword]~=nil then matched=true end
+    if a.titleval then derived=tonumber(self.state.titles[a.titleval]) or self:value(a.default or 0); matched=true end
+    if a.ship or a.crew then
+        local ship=Ships.active(self.state)
+        if ship and a.ship and ship.type==Ships.type(a.ship) then matched=true end
+        if ship and a.crew and ship.crew.quality==Ships.crew(a.crew) then matched=true end
+    end
+    if a.ability then
+        local score=self:ability(a.ability,a.modifier)
+        if comparison(score) then matched=true; if not a.greaterthan and not a.lessthan then derived=score end end
+    end
+    if a.name then
+        local value=tonumber(self.state.codewords[a.name]) or 0
+        if comparison(value) then matched=true; if not a.greaterthan and not a.lessthan then derived=value end end
+    end
+    local count=0; for _ in pairs(a) do count=count+1 end
+    if count==1 and (a.value~=nil or a.amount~=nil) then matched=true end
+    if not matched then return 0 end
+    if a.value~=nil or a.amount~=nil then return self:value(a.value or a.amount) end
+    return derived or 0
+end
+
 function Game:check_adjustment(node)
     local adjustment = 0
     for _, child in ipairs(node.children or {}) do
-        if type(child) == "table" and child.name == "adjust" and self:condition(child.attr) then
-            adjustment = adjustment + self:value(child.attr.amount or child.attr.value)
-        end
+        if type(child) == "table" and child.name == "adjust" then adjustment=adjustment+self:adjustment(child.attr) end
     end
     return adjustment
 end
@@ -303,6 +807,9 @@ function Game:open_market(node, message)
                         self:add_action("Sell "..(a.name or "item").." ("..self:value(a.sell).." shards)","sell",
                             {attr=a,node=child,cost=self:value(a.sell),market=node})
                     end
+                elseif child.name=="trade" then
+                    if a.buy then self:add_action("Buy "..(a.ship or a.cargo or a.item or plain(child)).." ("..self:value(a.buy).." shards)","ship_trade",{node=child,market=node,direction=1,cost=self:value(a.buy)}) end
+                    if a.sell then self:add_action("Sell "..(a.ship or a.cargo or a.item or plain(child)).." ("..self:value(a.sell).." shards)","ship_trade",{node=child,market=node,direction=-1,cost=self:value(a.sell)}) end
                 elseif child.name=="buy" or child.name=="sell" then
                     local cost=self:value(a.price or a.shards or a.amount or 0)
                     self:add_action((child.name=="buy" and "Buy " or "Sell ")..(a.name or a.item or plain(child))..
@@ -314,17 +821,43 @@ function Game:open_market(node, message)
     visit(node)
 end
 
+function Game:open_cache(node,message)
+    local a=node.attr; local key=a.name or "cache"; local cache=Inventory.cache(self.state,key,a,node)
+    self.actions={}; self.text={message or (a.text or "Manage stored possessions.")}
+    self:add_action("Leave cache","leave_cache",{node=node,key=key})
+    if cache.rules.frozen then self.text[#self.text+1]="This cache is locked."; return end
+    local unit=cache.rules.multiples or 1
+    if self.state.shards>=unit and (not cache.rules.maximum or cache.shards+unit<=cache.rules.maximum) then
+        self:add_action("Deposit "..unit.." Shards","cache_money",{node=node,key=key,amount=unit})
+    end
+    local charge=cache.rules.withdraw_charge or 0
+    if cache.shards>=unit+charge then self:add_action("Withdraw "..unit.." Shards","cache_money",{node=node,key=key,amount=-unit}) end
+    if not cache.rules.item_limit or #cache.items<cache.rules.item_limit then
+        for index,item in ipairs(self.state.items) do if Inventory.cache_accepts(cache,item) then
+            self:add_action("Deposit "..item.name,"cache_item",{node=node,key=key,index=index,direction=1})
+        end end
+    end
+    for index,item in ipairs(cache.items) do
+        self:add_action("Withdraw "..item.name,"cache_item",{node=node,key=key,index=index,direction=-1})
+    end
+end
+
 function Game:apply_affliction(kind, node)
-    local a=node.attr; local collection=kind=="curse" and self.state.curses or
-        kind=="disease" and self.state.diseases or self.state.poisons
-    collection[a.name or kind]=true
-    for _,child in ipairs(node.children or {}) do
-        if type(child)=="table" and child.name=="effect" and child.attr.ability then
-            local names=child.attr.ability=="*" and State.ability_names or {ability_key(child.attr.ability)}
-            for _,ability in ipairs(names) do
-                if child.attr.target then self.state.abilities[ability]=self:value(child.attr.target)
-                else self.state.abilities[ability]=math.max(1,math.min(12,(self.state.abilities[ability] or 0)+self:value(child.attr.bonus or 0))) end
-            end
+    local applied,reason=Inventory.afflict(self.state,kind,node)
+    if not applied and reason=="blessing" then self.text[#self.text+1]="Your blessing protects you." end
+end
+
+local function find_item(state,id)
+    for index,item in ipairs(state.items) do if item.id==id then return item,index end end
+end
+
+function Game:consume_use_effect(item,effect)
+    if effect.ability then Inventory.add_potion_bonus(self.state,ability_key(effect.ability)) end
+    if effect.blessing then Inventory.use_blessing(self.state,effect.blessing) end
+    if effect.uses and effect.uses>0 then
+        effect.uses=effect.uses-1
+        if effect.uses==0 and effect.disposable~=false then
+            local _,index=find_item(self.state,item.id); if index then table.remove(self.state.items,index) end
         end
     end
 end
@@ -335,6 +868,82 @@ function Game:resume_pending_check_children()
     for _,child in ipairs(pending) do
         if type(child)=="table" and (child.name=="success" or child.name=="failure") then self:walk(child,true) end
     end
+end
+
+function Game:finish_check(data,result,description)
+    local node,a=data.node,data.node.attr; local remaining={}
+    if not truth(a.force,true) then
+        local group=data.group or data
+        for _,candidate in ipairs(self.actions) do
+            if (candidate.data.group or candidate.data)~=group then remaining[#remaining+1]=candidate end
+        end
+        self.actions=remaining
+        for _,branch in ipairs(group.branches or {}) do
+            local matched=branch.name=="success" and result>0 or branch.name=="failure" and result<=0
+            if matched then
+                if branch.attr.section then
+                    local fallback=branch.name=="success" and "Successful roll" or "Failed roll"
+                    self:add_action(plain(branch)~="" and plain(branch) or fallback,"goto",branch.attr)
+                else for _,child in ipairs(branch.children or {}) do self:walk(child,true) end end
+                break
+            end
+        end
+    end
+    if truth(a.force,true) then self.actions=remaining; self:resume_section() end
+    self.text[#self.text+1]="\n\n"..description
+    return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
+end
+
+function Game:offer_roll_blessing(kind,data,result,description,wanted)
+    local key=Inventory.find_blessing(self.state,wanted)
+    if not key and wanted~="luck" then key=Inventory.find_blessing(self.state,"luck"); wanted="luck" end
+    if not key then return false end
+    self.state.blessing_prompt={kind=kind,instruction=data.node._path,ability=data.ability,
+        result=result,description=description,wanted=wanted}
+    if self.state.progress then self.state.progress.completed[data.node._path]=nil end
+    self.actions={}
+    self:add_action("Use "..wanted.." blessing and reroll","blessing_reroll",{prompt=self.state.blessing_prompt,roll_data=data})
+    self:add_action("Accept the roll","blessing_accept",{prompt=self.state.blessing_prompt,roll_data=data})
+    return true
+end
+
+function Game:finish_random(data,result,description)
+    local node=data.node; self.actions={}
+    if truth(node.attr.force,true) then self:resume_section() end
+    self.text[#self.text+1]="\n\n"..description
+    return {title="Roll result",text=table.concat(self.text),actions=self.actions,image=self.image}
+end
+
+function Game:combat_actions()
+    local combat=self.state.combat; self.actions={}
+    self:add_action("Attack","combat_attack",{instruction=combat.owner})
+    if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=combat.owner}) end
+    for _,choice in ipairs(self.flee_choices[combat.group] or {}) do
+        self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr})
+    end
+    if combat.round>0 then self:add_combat_luck_action() end
+end
+
+function Game:add_combat_luck_action()
+    if Inventory.find_blessing(self.state,"luck") then
+        self:add_action("Use Luck blessing and reroll round","combat_luck_reroll",{instruction=self.state.combat.owner})
+    end
+end
+
+function Game:combat_blessing_prompt()
+    local combat=self.state.combat; local enemy=Combat.current(self.state)
+    if not combat or not enemy then self:combat_actions(); return end
+    if combat.phase=="blessing_defence" then
+        self.actions={}
+        self:add_action("Use Defence through Faith","combat_blessing",{kind="defence",use=true,resume_attack=true})
+        self:add_action("Do not use Defence through Faith","combat_blessing",{kind="defence",use=false,resume_attack=true}); return
+    end
+    if not combat.wrath_prompted and Inventory.find_blessing(self.state,"wrath") then
+        combat.phase="blessing_wrath"; self.actions={}
+        self:add_action("Use Divine Wrath","combat_blessing",{kind="wrath",use=true})
+        self:add_action("Do not use Divine Wrath","combat_blessing",{kind="wrath",use=false}); return
+    end
+    combat.phase=nil; self:combat_actions()
 end
 
 function Game:is_new_sentence()
@@ -471,18 +1080,53 @@ end
 function Game:walk(node, enabled)
     self.steps=self.steps+1; if self.steps > 10000 then error("section execution limit exceeded") end
     if type(node)=="string" then if enabled and node:match("%S") then self.text[#self.text+1]=normalize_text(node) end return end
+    self.current_node=node
     local n,a=node.name,node.attr
-    if n=="if" or n=="elseif" then enabled=enabled and self:condition(a)
+    local blocker=n=="goto" or n=="random" or n=="difficulty" or n=="rankcheck" or n=="reroll" or n=="fight" or
+        n=="return" or n=="training" or n=="market" or n=="trade" or n=="resurrection" or n=="group"
+    if blocker and self.restoring and self.state.progress.completed[node._path] then return end
+    if n=="set" and self.restoring and self.state.progress.applied[node._path] then return end
+    local mutation=n=="tick" or n=="gain" or n=="lose" or
+        n=="adjustmoney" or n=="transfer" or n=="curse" or n=="disease" or n=="poison"
+    if mutation and self.restoring and self.state.progress.applied[node._path] then return end
+    local optional_mutation=(n=="tick" or n=="gain" or n=="lose") and not truth(a.force,true)
+    if mutation and not optional_mutation then self.state.progress.applied[node._path]=true end
+    if n=="if" or n=="elseif" then enabled=enabled and self:if_condition(a)
     elseif n=="else" then enabled=enabled -- grouped else parity is handled by authored mutually-exclusive blocks where possible
     end
     if not enabled then return end
     if n=="choice" then
+        local visit_key=self.state.book..":"..self.state.section..":"..node._path
+        if self.state.models.visits[visit_key] and not truth(a.revisit,false) then return end
         if self:condition(a) and destination_matches_life_state(self.state,a) and
                 (not a.book or self.catalog.books[a.book] and self.catalog.books[a.book].installed) then
             self:add_action(plain(node),"goto",a)
         end
         return
+    elseif n=="section" then
+        local dock=a.todock or a.dock
+        if dock then Ships.set_location(self.state,dock) end
+        for _,choice in pairs(self.state.models.extra_choices) do
+            local active=choice.activation or {}
+            if (active.book==self.state.book and active.section==self.state.section) or
+                    (active.tag and active.tag==a.tag) then
+                self:add_action(choice.text or choice.key,"goto",choice.destination)
+            end
+        end
+        for index,item in ipairs(self.state.items) do
+            if (item.kind=="weapon" or item.kind=="armour" or item.kind=="tool") and not item.equipped then
+                self:add_action("Equip "..item.name,"equip",{index=index})
+            end
+            for effect_index,effect in ipairs(item.effects or {}) do if effect.kind=="use" and (effect.uses==nil or effect.uses>0) then
+                self:add_action(effect.text or ("Use "..item.name),"use_item",{index=index,effect=effect_index})
+            end end
+        end
+        for index,ship in ipairs(self.state.models.fleet.ships) do if index~=self.state.models.fleet.active and Ships.here(self.state,ship) then
+            self:add_action("Select "..ship.name,"select_ship",{index=index})
+        end end
     elseif n=="goto" then
+        local visit_key=self.state.book..":"..self.state.section..":"..node._path
+        if self.state.models.visits[visit_key] and not truth(a.revisit,false) then return end
         -- GotoNode.canUse() defaults dead to false: ordinary destinations are
         -- unavailable while dead, while dead="t" destinations are death-only.
         if self:condition(a) and destination_matches_life_state(self.state,a) then
@@ -497,16 +1141,61 @@ function Game:walk(node, enabled)
             end
         end
         return
-    elseif n=="set" then self.state.variables[a.name or a.var]=self:value(a.value or a.amount)
+    elseif n=="set" then
+        local visible=plain(node)~="" and not truth(a.hidden,false)
+        if visible then
+            self:add_action(self:node_text(node) or "Set value","setvar",node)
+            if truth(a.force,true) then self:pause_section() end
+        else self:apply_set(node) end
     elseif n=="tick" then
+        if not truth(a.force,true) then self:add_action(self:node_text(node) or "Apply gain","mutate",{node=node,direction=1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
-        self.state.ticks=self.state.ticks+self:value(a.count or a.amount or 1); self:mutate(n,a,1)
-    elseif n=="gain" then self:mutate(n,a,1)
+        self:apply_tick_count(a); self:mutate(n,a,1)
+        if a.god then Inventory.attach_god_effects(self.state,a.god,node) end
+    elseif n=="gain" then
+        if a.ability=="?" then
+            for _,ability in ipairs(State.ability_names) do self:add_action((self:node_text(node) or "Choose ability").." ("..ability..")","mutate",{node=node,direction=1,ability=ability}) end
+            self:pause_section(); return
+        end
+        if not truth(a.force,true) then self:add_action(self:node_text(node) or "Take gain","mutate",{node=node,direction=1}); return end
+        self:mutate(n,a,1)
     elseif n=="lose" then
+        if a.flag and not self.state.flags[a.flag] then return end
+        if a.ability=="?" then
+            for _,ability in ipairs(State.ability_names) do self:add_action((self:node_text(node) or "Choose ability").." ("..ability..")","mutate",{node=node,direction=-1,ability=ability}) end
+            self:pause_section(); return
+        end
+        if truth(a.force,true) and (a.item or a.weapon or a.armour or a.tool) and a.item~="*" and a.weapon~="*" and a.armour~="*" and a.tool~="*" and self:start_loss_selection(node) then return end
+        if not truth(a.force,true) then self:add_action(self:node_text(node) or "Pay cost","mutate",{node=node,direction=-1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
-        self:mutate(n,a,-1)
-    elseif n=="adjust" or n=="adjustmoney" then self:mutate(n,a,1)
-    elseif n=="rest" then self.state.stamina=math.min(self.state.max_stamina,self.state.stamina+self:value(a.stamina or 0)); self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0))
+        self:mutate(n,self:loss_attributes(node),-1)
+    elseif n=="adjust" then return
+    elseif n=="price" then
+        local details=self:price_details(node)
+        if details.available then
+            if truth(a.hidden,false) then
+                local paid,message=self:pay_price(node); if not paid then self.errors[#self.errors+1]=message end
+            else
+                self:add_action(plain(node)~="" and plain(node) or ("Pay "..details.cost.." Shards"),"pay_price",{node=node})
+            end
+        end
+        return
+    elseif n=="adjustmoney" then
+        local multiplier=self:value(a.multiply or 1); local cache=a.cache or a.name
+        if cache then local target=self.state.caches[cache] or State.new_cache(); self.state.caches[cache]=target; target.shards=math.max(0,target.shards*multiplier)
+        else self.state.shards=math.max(0,self.state.shards*multiplier) end
+    elseif n=="rest" then
+        local details=self:rest_details(node)
+        if details.available then
+            if truth(a.hidden,false) then
+                self:perform_rest(node,details.max_uses)
+            elseif details.max_uses>1 then
+                for uses=1,details.max_uses do
+                    self:add_action((self:node_text(node) or "Rest").." ("..uses.." days)","rest",{node=node,uses=uses})
+                end
+            else self:add_action(self:node_text(node) or "Rest","rest",{node=node,uses=1}) end
+        end
+        return
     elseif n=="random" then
         if not a.flag or self.state.flags[a.flag] then
             local label=self:node_text(node)
@@ -537,7 +1226,7 @@ function Game:walk(node, enabled)
     elseif n=="reroll" then
         local label=self:node_text(node)
         self.text[#self.text+1]=label
-        self:add_action(label,"random",node)
+        self:add_action(label,"reroll",node)
         self:preview_after(node); self:pause_section(); return
     elseif n=="success" or n=="failure" then
         local result=self.state.variables[a.var or "*difficulty*"]
@@ -576,20 +1265,25 @@ function Game:walk(node, enabled)
             -- still executes ordinary ChoiceNodes in the outcomes container
             -- (for example the "No parchment" exit in 2.543), while leaving
             -- success/failure destinations dormant until a result exists.
+            local has_state_outcomes=false
             for _,child in ipairs(node.children or {}) do
                 if type(child)=="table" and child.name=="choice" then self:walk(child,true)
                 elseif type(child)=="table" and (child.name=="success" or child.name=="failure") then
                     self:attach_check_branch(child)
+                elseif type(child)=="table" and child.name=="outcome" and
+                        not child.attr.range and (child.attr.codeword or child.attr.flag) then
+                    has_state_outcomes=true
                 end
             end
-            return
+            if not has_state_outcomes then return end
         end
         for _,c in ipairs(node.children or {}) do
             if type(c)=="table" then
-                local matched=c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr)
-                    or c.name=="success" and value~=nil and value>0
-                    or c.name=="failure" and value~=nil and value<=0
-                if matched then self:walk(c,true); break end
+                local matched,prevented=false,false
+                if c.name=="outcome" then matched,prevented=self:outcome_match(c,value)
+                elseif c.name=="success" then matched=value~=nil and value>0
+                elseif c.name=="failure" then matched=value~=nil and value<=0 end
+                if matched and not prevented then self:walk(c,true); break end
             end
         end
         return
@@ -619,7 +1313,9 @@ function Game:walk(node, enabled)
     elseif n=="training" then
         local label=self:node_text(node)
         self.text[#self.text+1]=label
-        self:add_action(label,"training",node)
+        if a.ability=="?" then
+            for _,ability in ipairs(State.ability_names) do self:add_action(label.." ("..ability..")","training",{node=node,ability=ability}) end
+        else self:add_action(label,"training",node) end
         self:preview_after(node); self:pause_section(); return
     elseif n=="resurrection" then
         local label=self:node_text(node) or (a.section and "Arrange resurrection" or "Use resurrection")
@@ -628,7 +1324,7 @@ function Game:walk(node, enabled)
         elseif self.state.stamina<=0 and self.state.resurrection then self:add_action(label,"resurrect",self.state.resurrection) end
         return
     elseif n=="itemcache" or n=="moneycache" then
-        local key=a.name; self.state.caches[key]=self.state.caches[key] or {items={},shards=0}
+        local key=a.name; Inventory.cache(self.state,key,a,node)
         self:add_action(a.text or plain(node) or "Open cache","cache",{key=key,node=node}); return
     elseif n=="transfer" then
         local source=a.from and self.state.caches[a.from]
@@ -646,11 +1342,46 @@ function Game:walk(node, enabled)
     elseif n=="curse" or n=="disease" or n=="poison" then
         self:apply_affliction(n,node)
     elseif n=="while" then
+        local frame
+        for _,candidate in ipairs(self.state.execution.frames) do
+            if candidate.kind=="while" and candidate.path==node._path then frame=candidate; break end
+        end
+        if not frame then
+            frame={schema=1,kind="while",path=node._path,var=a.var,iteration=1}
+            self.state.execution.frames[#self.state.execution.frames+1]=frame
+        end
         local guard=0
-        while self.state.variables[a.var] and self.state.variables[a.var]~=0 and guard<100 do
+        while self.state.variables[a.var]==nil and guard<100 do
             guard=guard+1
             for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+            if self.state.variables[a.var]==nil then
+                frame.iteration=frame.iteration+1
+                local prefix=node._path.."."
+                for path in pairs(self.state.progress.applied) do if path:sub(1,#prefix)==prefix then self.state.progress.applied[path]=nil end end
+                for path in pairs(self.state.progress.completed) do if path:sub(1,#prefix)==prefix then self.state.progress.completed[path]=nil end end
+            end
         end
+        if self.state.variables[a.var]~=nil then
+            for index=#self.state.execution.frames,1,-1 do if self.state.execution.frames[index]==frame then table.remove(self.state.execution.frames,index); break end end
+        end
+        if guard>=100 and self.state.variables[a.var]==nil then error("while loop execution limit exceeded at "..node._path) end
+        return
+    elseif n=="extrachoice" then
+        local list=self.state.models.extra_choices
+        if a.remove then list[a.remove]=nil
+        elseif a.key then list[a.key]=State.new_extra_choice(a) end
+        return
+    elseif n=="field" then
+        local label=a.label or a.text or a.name or "Value"
+        local value=self.state.variables[a.name]
+        if value==nil then value=self.state.codewords[a.name] and 1 or 0 end
+        self.text[#self.text+1]=label..": "..tostring(value)
+        return
+    elseif n=="sectionview" then
+        self.text[#self.text+1]=plain(node).." [Section preview is available in the Java desktop reader only.]"
+        return
+    elseif n=="group" and not truth(a.force,true) then
+        self:add_action(self:node_text(node) or "Apply grouped action","group",node)
         return
     elseif n=="market" or n=="trade" then
         self:add_action(plain(node)~="" and plain(node) or "Open market","market",node)
@@ -729,24 +1460,224 @@ end
 function Game:load(book, section)
     local path,err=self.catalog:section_path(book,section); if not path then return nil,err end
     local root,xerr=XML.read(path); if not root then return nil,xerr end
+    local declared,compatibility_error=pcall(Compatibility.assert_declared,root,tostring(book).."/"..tostring(section))
+    if not declared then return nil,compatibility_error end
+    local pending=self.state.pending
+    self.restoring=pending and pending.kind=="interaction" and pending.book==tostring(book) and pending.section==tostring(section) and self.state.progress~=nil
+    if not self.restoring then
+        self.state.progress={schema=1,book=tostring(book),section=tostring(section),applied={},completed={}}
+        self.state.pending=nil
+    end
     self.state.book,self.state.section=tostring(book),tostring(section); self.text={}; self.preview_text=nil; self.actions={}; self.steps=0; self.image=nil
-    self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil
-    self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil
+    Rules.enter_book(self.state,self.catalog.books[self.state.book].properties)
+    self.paragraph_depth=0; self.conditional_depth=0; self.hide_default_depth=0; self.deferred_block=false; self.pause_after_paragraph=false; self.pause_before_outcomes=false; self.pending_check_children=nil; self.blocking_node=nil
+    if not self.restoring then self.state.variables["*difficulty*"]=nil; self.state.variables["*random*"]=nil end
     self.pending_checks={}; self.checks_by_var={}
-    pair_fight_nodes(root)
-    self.section_runner=coroutine.create(function() self:walk(root,true) end)
+    self.nodes_by_path,self.fight_groups,self.flee_choices=pair_fight_nodes(root)
+    self.section_runner=coroutine.create(function() self:walk(root,true) end); self.active_runner=self.section_runner
     local ok,msg=pcall(function() self:resume_section() end); if not ok then return nil,msg end
-    self.state.pending={kind="section",book=self.state.book,section=self.state.section}
+    if self.state.combat and self.state.combat.book==self.state.book and self.state.combat.section==self.state.section then
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if self.state.combat.phase=="blessing_wrath" or self.state.combat.phase=="blessing_defence" then
+            self:combat_blessing_prompt()
+        elseif frame and frame.kind=="combat_hook" then
+            self.actions={}
+            if frame.completed then self:add_action("Continue combat","combat_continue",{instruction=self.state.combat.owner})
+            else
+                local hook=self.nodes_by_path[frame.hook_path]
+                if hook then self:start_combat_hook(hook,frame.hook_kind,frame.enemy,frame.replacement,frame) end
+            end
+        else
+            self:combat_actions()
+        end
+    end
+    local use_frame=self.state.execution.frames[#self.state.execution.frames]
+    if use_frame and use_frame.kind=="use_effect" then
+        self.actions={}
+        if use_frame.completed then
+            self:add_action("Finish using "..(use_frame.item_name or "item"),"finish_use_effect",{item_id=use_frame.item_id})
+        else
+            local item=find_item(self.state,use_frame.item_id) or {id=use_frame.item_id,name=use_frame.item_name}
+            self:start_use_program(item,use_frame.effect,use_frame)
+        end
+    end
+    local blessing_prompt=self.state.blessing_prompt
+    if blessing_prompt then
+        local roll_data
+        for _,candidate in ipairs(self.actions) do
+            if candidate.kind==blessing_prompt.kind and candidate.instruction==blessing_prompt.instruction then
+                roll_data=candidate.data; break
+            end
+        end
+        if roll_data then
+            if blessing_prompt.kind=="random" then roll_data={node=roll_data} end
+            self.actions={}
+            self:add_action("Use "..blessing_prompt.wanted.." blessing and reroll","blessing_reroll",{prompt=blessing_prompt,roll_data=roll_data})
+            self:add_action("Accept the roll","blessing_accept",{prompt=blessing_prompt,roll_data=roll_data})
+        end
+    end
+    if self.restoring and pending and (pending.resume_kind=="market" or pending.resume_kind=="buy" or pending.resume_kind=="sell") then
+        for _,action in ipairs(self.actions) do
+            if action.kind=="market" then self:open_market(action.data); break end
+        end
+    end
+    local death_result=self:route_death(); if death_result then return death_result end
+    if not self.state.pending then
+        self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,instruction=nil,actions={}}
+    end
     return { title=(self.catalog.books[self.state.book].title or "").." — "..self.state.section,
         text=self:visible_text():gsub("[ \t]+\n","\n"):match("^%s*(.-)%s*$"), actions=self.actions, image=self.image }
 end
 
-function Game:choose(index)
+function Game:_choose(index)
     local action=self.actions[index]; if not action then return nil,"Invalid choice" end
     self.preview_text=nil
     if action.kind=="startbook" then
         self.state.book=tostring(action.data.book); self.state.section="New"
         return self:load(self.state.book,self.state.section)
+    elseif action.kind=="select_ship" then
+        local ship=self.state.models.fleet.ships[action.data.index]; if not ship then return nil,"Ship is no longer available." end
+        self.state.models.fleet.active=action.data.index
+        return {title="Ship selected",text="Selected "..ship.name..".",actions=self.actions,image=self.image}
+    elseif action.kind=="equip" then
+        local item=self.state.items[action.data.index]; if not item then return nil,"Item is no longer available." end
+        local equipped,equip_error=Inventory.equip(self.state,item); if not equipped then return nil,equip_error end
+        for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
+        return {title="Equipment",text="Equipped "..item.name..".",actions=self.actions,image=self.image}
+    elseif action.kind=="use_item" then
+        local item=self.state.items[action.data.index]; local effect=item and item.effects[action.data.effect]
+        if not effect or effect.uses==0 then return nil,"That effect is no longer available." end
+        self:consume_use_effect(item,effect)
+        if #(effect.program or {})>0 and self:start_use_program(item,effect) then
+            return {title=effect.verb or "Use",text=effect.text or ("Used "..item.name.."."),actions=self.actions,image=self.image}
+        end
+        return {title="Item used",text=effect.text or ("Used "..item.name.."."),actions=self.actions,image=self.image}
+    elseif action.kind=="finish_use_effect" then
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame and frame.kind=="use_effect" then table.remove(self.state.execution.frames) end
+        self.actions={}; self:resume_section()
+        return {title="Item used",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="loss_select" then
+        local selection=self.state.selection
+        if not selection or selection.kind~="loss" then return nil,"There is no item-loss selection in progress." end
+        if self:remove_loss_item(selection.attributes,action.data.item_id,1)==0 then return nil,"That item is no longer available." end
+        selection.remaining=selection.remaining-1
+        if selection.remaining>0 then
+            local node=self.nodes_by_path[selection.instruction]
+            self:show_loss_selection(node)
+            return {title="Choose possessions",text="Choose another item to lose.",actions=self.actions,image=self.image}
+        end
+        local instruction=selection.instruction; self.state.selection=nil
+        if self.state.progress then self.state.progress.applied[instruction]=true end
+        self.actions={}; self:resume_section()
+        return {title="Possessions lost",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="mutate" then
+        local node=action.data.node
+        local attributes=node.name=="lose" and self:loss_attributes(node) or State.copy(node.attr); if action.data.ability then attributes.ability=action.data.ability end
+        self:mutate(node.name,attributes,action.data.direction)
+        if action.data.direction>0 and node.attr.god then Inventory.attach_god_effects(self.state,node.attr.god,node) end
+        if node.name=="tick" then self:apply_tick_count(node.attr) end
+        self.state.progress.applied[node._path]=true
+        for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
+        return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="setvar" then
+        local node=action.data
+        self:apply_set(node)
+        for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
+        if truth(node.attr.force,true) then
+            self.actions={}; self:resume_section()
+        end
+        return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="pay_price" then
+        local data=action.data
+        local paid,cost=self:pay_price(data.node)
+        if not paid then return nil,cost end
+        for index,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,index); break end end
+        return {title="Payment made",text="Paid "..cost.." Shards.",actions=self.actions,image=self.image}
+    elseif action.kind=="rest" then
+        local data=action.data; local node=data.node or data
+        local rested,amount=self:perform_rest(node,data.uses or 1)
+        if not rested then return nil,amount end
+        -- Refresh all actions for this RestNode: repeatable paid rests remain
+        -- available only while the adventurer is wounded and can afford them.
+        for i=#self.actions,1,-1 do
+            local candidate=self.actions[i]
+            if candidate.kind=="rest" and (candidate.data.node or candidate.data)==node then table.remove(self.actions,i) end
+        end
+        local details=self:rest_details(node)
+        if details.available then
+            if details.max_uses>1 then for uses=1,details.max_uses do
+                self:add_action((self:node_text(node) or "Rest").." ("..uses.." days)","rest",{node=node,uses=uses})
+            end else self:add_action(self:node_text(node) or "Rest","rest",{node=node,uses=1}) end
+        end
+        return {title="Rested",text=table.concat(self.text).."\n\nRestored "..amount.." Stamina.",actions=self.actions,image=self.image}
+    elseif action.kind=="group" then
+        self.actions={}
+        for _,child in ipairs(action.data.children or {}) do self:walk(child,true) end
+        return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="blessing_reroll" then
+        local prompt,data=action.data.prompt,action.data.roll_data
+        local record,error_message=self.journal:undo(); if not record then return nil,error_message end
+        self.journal:discard_future()
+        if not Inventory.use_blessing(self.state,prompt.wanted) then return nil,"That blessing is no longer available." end
+        self.state.blessing_prompt=nil
+        local node=self.nodes_by_path[prompt.instruction] or data.node
+        if prompt.kind=="random" then self.actions={{kind="random",data=node,instruction=node._path}}
+        else
+            data.node=node; self.actions={{kind="skillcheck",data=data,instruction=node._path}}
+        end
+        if self.state.progress then self.state.progress.completed[node._path]=true end
+        return self:_choose(1)
+    elseif action.kind=="blessing_accept" then
+        local prompt,data=action.data.prompt,action.data.roll_data
+        self.state.blessing_prompt=nil
+        if self.state.progress then self.state.progress.completed[prompt.instruction]=true end
+        if prompt.kind=="random" then return self:finish_random(data,prompt.result,prompt.description) end
+        return self:finish_check(data,prompt.result,prompt.description)
+    elseif action.kind=="reroll" then
+        local record,error_message=self.journal:undo(); if not record then return nil,error_message end
+        local meta=record.metadata or {}; local a=meta.attr or {}
+        if meta.kind=="random" then
+            local source=self.nodes_by_path and self.nodes_by_path[meta.instruction]
+            local roll=roll_dice(self,tonumber(a.dice) or 2)+(source and self:check_adjustment(source) or 0)
+            self.state.variables[a.var or "*random*"]=roll
+            return {title="Reroll result",text="Rolled "..roll..".",actions=self.actions,image=self.image}
+        elseif meta.kind=="skillcheck" then
+            local ability=meta.ability or words(a.ability)[1]; local score=self:ability(ability)
+            local source=self.nodes_by_path and self.nodes_by_path[meta.instruction]
+            local adjustment=source and self:check_adjustment(source) or 0
+            local roll
+            if meta.node_name=="rankcheck" then
+                roll=roll_dice(self,tonumber(a.dice) or 1)+self:value(a.add or 0)+adjustment
+                self.state.variables[a.var or "*difficulty*"]=self.state.rank-roll+1
+            else
+                roll=score+adjustment
+                for _=1,(self.state.models.stats.difficulty_dice or 2) do roll=roll+self:roll(6) end
+                self.state.variables[a.var or "*difficulty*"]=roll-self:value(a.level)
+            end
+            return {title="Reroll result",text=ability_key(ability).." reroll: "..roll..".",actions=self.actions,image=self.image}
+        elseif meta.kind=="training" then
+            local ability=ability_key(meta.ability or a.ability); local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
+            if ability and roll>(self.state.abilities[ability] or 0) then self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1) end
+            if ability then self.state.models.stats.natural[ability]=self.state.abilities[ability] end
+            return {title="Reroll result",text="Training reroll: "..roll..".",actions=self.actions,image=self.image}
+        elseif meta.kind=="combat_attack" and self.state.combat then
+            local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
+            local log=table.concat(self.state.combat.log,"\n")
+            if status=="blocked" then
+                return {title="Combat event",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image}
+            elseif status=="ongoing" then
+                self.actions={}; self:add_action("Attack","combat_attack",{instruction=self.state.combat.owner})
+                if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=self.state.combat.owner}) end
+                for _,choice in ipairs(self.flee_choices[self.state.combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=self.state.combat.owner,destination=choice.attr}) end
+                return {title="Combat reroll",text=log,actions=self.actions,image=self.image}
+            end
+            local opponents=self.state.combat.opponents; self.state.combat=nil; self.actions={}
+            if self.state.progress then for _,enemy in ipairs(opponents) do self.state.progress.completed[enemy.path]=true end end; self:resume_section()
+            local death_result=self:route_death(); if death_result then return death_result end
+            return {title="Combat reroll",text=log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated."),actions=self.actions,image=self.image}
+        end
+        return nil,"The preceding action cannot be rerolled."
     elseif action.kind=="skillcheck" then
         local node,a=action.data.node,action.data.node.attr
         local adjustment=self:check_adjustment(node)
@@ -754,15 +1685,16 @@ function Game:choose(index)
         if node.name=="rankcheck" then
             local dice=tonumber(a.dice) or 1
             roll=self:value(a.add or 0)+adjustment
-            for _=1,dice do roll=roll+self.random(6) end
+            for _=1,dice do roll=roll+self:roll(6) end
             score=self.state.rank
             success=roll<=score
             description=string.format("Rank check: rolled %d against Rank %d — %s.",roll,score,success and "success" or "failure")
             self.state.variables["*ability*"]="Rank"
         else
             local chosen=action.data.ability or words(a.ability)[1]
-            score=(self.state.abilities[ability_key(chosen)] or 0)+adjustment
-            roll=self.random(6)+self.random(6)+score
+            score=self:ability(chosen)+adjustment+Inventory.consume_potion_bonus(self.state,ability_key(chosen))
+            roll=score
+            for _=1,(self.state.models.stats.difficulty_dice or 2) do roll=roll+self:roll(6) end
             success=roll>self:value(a.level)
             description=string.format("%s check: rolled %d against Difficulty %d — %s.",
                 ability_key(chosen),roll,self:value(a.level),success and "success" or "failure")
@@ -771,67 +1703,54 @@ function Game:choose(index)
         local result = node.name=="rankcheck" and (score-roll+1) or (roll-self:value(a.level))
         self.state.variables[a.var or "*difficulty*"]=result
         if a.flag then self.state.flags[a.flag]=nil end
-        local remaining={}
-        if not truth(a.force,true) then
-            local group=action.data.group or action.data
-            for _,candidate in ipairs(self.actions) do
-                if (candidate.data.group or candidate.data)~=group then remaining[#remaining+1]=candidate end
-            end
-            self.actions=remaining
-            for _,branch in ipairs(group.branches or {}) do
-                local matched=branch.name=="success" and result>0 or branch.name=="failure" and result<=0
-                if matched then
-                    if branch.attr.section then
-                        local fallback=branch.name=="success" and "Successful roll" or "Failed roll"
-                        self:add_action(plain(branch)~="" and plain(branch) or fallback,"goto",branch.attr)
-                    else
-                        for _,child in ipairs(branch.children or {}) do self:walk(child,true) end
-                    end
-                    break
-                end
-            end
+        local chosen=action.data.ability or words(a.ability)[1]
+        local wanted=result<=0 and ability_key(chosen) or "luck"
+        if self:offer_roll_blessing("skillcheck",action.data,result,description,wanted) then
+            return {title="Use blessing?",text=description,actions=self.actions,image=self.image}
         end
-        if truth(a.force,true) then self.actions=remaining end
-        if truth(a.force,true) then self:resume_section() end
-        self.text[#self.text+1]="\n\n"..description
-        return {title="Check result",text=table.concat(self.text),actions=self.actions,image=self.image}
+        return self:finish_check(action.data,result,description)
     elseif action.kind=="random" then
         local node,a=action.data,action.data.attr
         local roll=roll_dice(self,tonumber(a.dice) or 2)+self:check_adjustment(node)
         self.last_roll=roll; self.state.variables[a.var or "*random*"]=roll
         if a.flag then self.state.flags[a.flag]=nil end
-        self.actions={}
-        if truth(a.force,true) then self:resume_section() end
-        self.text[#self.text+1]="\n\nRolled "..tostring(roll).."."
-        return {title="Roll result",text=table.concat(self.text),actions=self.actions,image=self.image}
+        local wanted=tostring(a.type or ""):lower()=="travel" and "travel" or "luck"
+        local description="Rolled "..tostring(roll).."."
+        if self:offer_roll_blessing("random",{node=node},roll,description,wanted) then
+            return {title="Use blessing?",text=description,actions=self.actions,image=self.image}
+        end
+        return self:finish_random({node=node},roll,description)
     elseif action.kind=="goto" then
         local a=action.data
         if truth(a.pay,a.shards~=nil) then self.state.shards=math.max(0,self.state.shards-self:value(a.shards or 0)); if a.item then State.remove_item(self.state,a.item,1) end end
-        if a.sail then self.state.at_sea=true end
-        local starters={Liana={"Wayfarer",2,5,2,3,6,4},Andriel={"Warrior",3,6,2,4,3,2},
-            Chalor={"Mage",2,2,6,1,5,3},Marana={"Rogue",5,4,4,1,2,6},
-            Ignatius={"Priest",4,2,3,6,4,2},Astariel={"Troubadour",6,3,4,3,2,4}}
-        if starters[a.section] and self.state.profession=="" then
-            local p=starters[a.section]; self.state.profession=p[1]; self.state.name=a.section
-            for i,n in ipairs(State.ability_names) do self.state.abilities[n]=p[i+1] end
-            self.state.rank=1; self.state.max_stamina=9; self.state.stamina=9; self.state.shards=16
-            self.state.defence=(self.state.abilities.Combat or 0)+self.state.rank+1
-            State.add_item(self.state,{name="leather jerkin",armour=true,bonus=1})
-            local weapons={Priest="mace",Mage="staff",Rogue="sword",Troubadour="sword",Warrior="battle-axe",Wayfarer="spear"}
-            State.add_item(self.state,{name=weapons[p[1]],weapon=true}); State.add_item(self.state,{name="map"})
+        if a.sail then self.state.at_sea=true; Ships.set_location(self.state,"*sea*") end
+        if self.state.profession=="" then
+            local template,template_error=Character.load(self.catalog,self.state.book)
+            local adventurer=template and Character.find(template,a.section)
+            if adventurer then Character.apply(self.state,template,adventurer)
+            elseif template_error then return nil,template_error end
         end
-        table.insert(self.state.history,{book=self.state.book,section=self.state.section})
+        if a.visit then table.insert(self.state.history,{book=self.state.book,section=self.state.section}) end
+        if action.instruction then
+            local key=self.state.book..":"..self.state.section..":"..action.instruction
+            self.state.models.visits[key]=(self.state.models.visits[key] or 0)+1
+        end
+        if self.state.execution and #self.state.execution.frames>0 then
+            self.state.execution.frames={}; self.state.combat=nil; self.nested_outer_runner=nil
+        end
         return self:load(a.book or self.state.book,a.section)
     elseif action.kind=="return" then
         local destination=table.remove(self.state.history)
         if not destination then return nil,"There is no previous section." end
         return self:load(destination.book,destination.section)
     elseif action.kind=="training" then
-        local a=action.data.attr; local ability=ability_key(a.ability)
+        local node=action.data.node or action.data; local a=node.attr
+        local ability=ability_key(action.data.ability or a.ability)
         local roll=roll_dice(self,tonumber(a.dice) or 2)+self:value(a.add or 0)
-        local old_score=ability and self.state.abilities[ability] or 0
+        local old_score=ability and self:ability(ability) or 0
         if ability and ability~="?" and roll>(self.state.abilities[ability] or 0) then
             self.state.abilities[ability]=math.min(12,(self.state.abilities[ability] or 0)+1)
+            self.state.models.stats.natural[ability]=self.state.abilities[ability]
         end
         self.state.variables.exp=roll-old_score
         if a.var then self.state.variables[a.var]=roll end
@@ -848,91 +1767,134 @@ function Game:choose(index)
         if a.shards then self.state.shards=math.max(0,self.state.shards-self:value(a.shards)) end
         return self:load(a.book or self.state.book,a.section)
     elseif action.kind=="cache" then
-        local cache=self.state.caches[action.data.key]
-        local lines={"Stored shards: "..tostring(cache.shards or 0),"Stored items:"}
-        for _,item in ipairs(cache.items or {}) do lines[#lines+1]="• "..item.name end
-        return {title=action.data.key,text=table.concat(lines,"\n"),actions=self.actions,image=self.image}
-    elseif action.kind=="fight" then
-        local fight_node=action.data; local a=fight_node.attr
-        local enemy_stamina=self:value(a.stamina or a.endurance or 1)
-        local enemy_defence=self:value(a.defence or 0)
-        local enemy_combat=self:value(a.combat or a.attack or 0)
-        local flee_at=math.max(0,self:value(a.flee or 0))
-        -- XML.parse normalizes every attribute name to lower case.
-        local player_defence=a.playerdefence and self:value(a.playerdefence) or self.state.defence
-        local attack_dice=tonumber(a.attackdice) or 2
-        local enemy_attacks=tonumber(a.attacks) or 1
-        local player_first=truth(a.playerfirst,true)
-        local rounds,log=0,{}
-
-        local pre_damage=a.predamage and self:value(a.predamage) or 0
-        if pre_damage>0 then
-            local dealt=math.min(pre_damage,enemy_stamina)
-            enemy_stamina=enemy_stamina-dealt
-            log[#log+1]=string.format("Before combat, %s takes %d damage.",a.name or "the enemy",dealt)
-            if a.staminalost then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+dealt end
+        self:open_cache(action.data.node)
+        return {title=action.data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="cache_money" then
+        local data=action.data; local cache=self.state.caches[data.key]
+        if data.amount>0 then self.state.shards=self.state.shards-data.amount; cache.shards=cache.shards+data.amount
+        else local unit=-data.amount; cache.shards=cache.shards-unit-(cache.rules.withdraw_charge or 0); self.state.shards=self.state.shards+unit end
+        self:open_cache(data.node,"Cache balance updated.")
+        return {title=data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="cache_item" then
+        local data=action.data; local cache=self.state.caches[data.key]
+        if data.direction>0 then local item=self.state.items[data.index]; Inventory.unequip(self.state,item); table.insert(cache.items,table.remove(self.state.items,data.index))
+        else table.insert(self.state.items,table.remove(cache.items,data.index)) end
+        self:open_cache(data.node,"Possessions updated.")
+        return {title=data.key,text=table.concat(self.text,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="leave_cache" then
+        return {title="Cache",text=table.concat(self.text,"\n"),actions={},image=self.image}
+    elseif action.kind=="ship_trade" then
+        local data,node=action.data,action.data.node; local a=node.attr; local ship=Ships.active(self.state)
+        if data.direction>0 then
+            if self.state.shards<data.cost then return nil,"You cannot afford that." end
+            if a.ship then Ships.new(self.state,a)
+            elseif a.cargo then if not Ships.add_cargo(ship,a.cargo,a.quantity) then return nil,"The selected ship has no cargo space." end
+            elseif a.crew then if not ship then return nil,"There is no ship here." end; ship.crew.quality=Ships.crew(a.crew)
+            else State.add_item(self.state,item_from(a,node)) end
+            self.state.shards=self.state.shards-data.cost
+        else
+            local sold=a.ship and Ships.remove(self.state,a.ship) or a.cargo and Ships.remove_cargo(ship,a.cargo,a.quantity) or State.remove_item(self.state,a.item or a.name,tonumber(a.quantity) or 1)
+            if not sold then return nil,"There is nothing matching that sale here." end
+            self.state.shards=self.state.shards+data.cost
         end
-
-        local function enemy_turn()
-            for attack_number=1,enemy_attacks do
-                if self.state.stamina<=0 then break end
-                local roll=roll_dice(self,2)+enemy_combat
-                local damage=combat_damage(roll,player_defence)
-                if damage>0 then
-                    local replacement=fight_node.fightdamage and fight_node.fightdamage.attr.type and
-                        fight_node.fightdamage.attr.type:match("^repl")
-                    if replacement then
-                        -- Replacement damage nodes own the damage; their common authored form
-                        -- removes one randomly selected ability point per successful hit.
-                        local abilities=State.ability_names
-                        local ability=abilities[self.random(#abilities)]
-                        self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-1)
-                    elseif a.abilitydamaged and a.abilitydamaged:lower()~="stamina" then
-                        local ability=ability_key(a.abilitydamaged)
-                        self.state.abilities[ability]=math.max(0,(self.state.abilities[ability] or 0)-damage)
-                    else
-                        self.state.stamina=math.max(0,self.state.stamina-damage)
-                    end
-                    if fight_node.fightdamage then
-                        local function damage_effect(node)
-                            if type(node)~="table" then return end
-                            if node.name=="tick" then self:mutate("tick",node.attr,1)
-                            elseif node.name=="gain" then self:mutate("gain",node.attr,1)
-                            elseif node.name=="lose" and not replacement then self:mutate("lose",node.attr,-1) end
-                            for _,child in ipairs(node.children or {}) do damage_effect(child) end
-                        end
-                        damage_effect(fight_node.fightdamage)
-                    end
-                end
-                local suffix=enemy_attacks>1 and string.format(" (attack %d)",attack_number) or ""
-                log[#log+1]=string.format("%s rolls %d against Defence %d%s: %s.",a.name or "Enemy",roll,
-                    player_defence,suffix,damage>0 and (damage.." damage") or "miss")
+        for _,child in ipairs(node.children or {}) do
+            if type(child)=="table" and ((data.direction<0 and child.name=="sold") or (data.direction>0 and child.name=="bought")) then
+                for _,effect in ipairs(child.children or {}) do self:walk(effect,true) end
             end
         end
-
-        while enemy_stamina>flee_at and self.state.stamina>0 and rounds<100 do
-            rounds=rounds+1
-            if not player_first then enemy_turn(); player_first=true end
-            if self.state.stamina<=0 then break end
-            local roll=roll_dice(self,attack_dice)+(self.state.abilities.Combat or 0)
-            local damage=combat_damage(roll,enemy_defence)
-            enemy_stamina=math.max(0,enemy_stamina-damage)
-            if a.staminalost and damage>0 then self.state.variables[a.staminalost]=(self.state.variables[a.staminalost] or 0)+damage end
-            log[#log+1]=string.format("You roll %d against %s's Defence %d: %s. (%d Stamina left)",roll,
-                a.name or "the enemy",enemy_defence,damage>0 and (damage.." damage") or "miss",enemy_stamina)
-            if enemy_stamina>flee_at then enemy_turn() end
+        self:open_market(data.market,(data.direction>0 and "Purchase completed." or "Sale completed."))
+        return {title="Market",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="fight" then
+        local node=action.data
+        local opponents=node.attr.group and self.fight_groups[node.attr.group] or {node}
+        local combat=Combat.start(self,node,opponents)
+        combat.book,combat.section=self.state.book,self.state.section
+        self:combat_blessing_prompt()
+        return {title="Combat",text=table.concat(combat.log,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_blessing" then
+        local combat=self.state.combat; if not combat then return nil,"Combat is no longer active." end
+        if action.data.kind=="wrath" then
+            combat.wrath_prompted=true
+            if action.data.use and Inventory.use_blessing(self.state,"wrath") then
+                local enemy=Combat.current(self.state); local loss=math.min(enemy.stamina,self:roll(6))
+                enemy.stamina=enemy.stamina-loss
+                if enemy.staminalost then self.state.variables[enemy.staminalost]=(self.state.variables[enemy.staminalost] or 0)+loss end
+                combat.log[#combat.log+1]="Divine Wrath deals "..loss.." damage to "..enemy.name.."."
+            end
+        else
+            combat.defence_prompted=true
+            if action.data.use then
+                local _,blessing=Inventory.use_blessing(self.state,"defen")
+                if blessing then combat.defence_bonus=tonumber(blessing.bonus) or 3 end
+            end
         end
-
-        local won=enemy_stamina<=flee_at and self.state.stamina>0
-        local combat_result="\n\n"..table.concat(log,"\n").."\n\n"..(won and "You win the fight." or "You have been defeated.")
-
-        self.actions={}
-        -- Just like ExecutableRunner.continueExecution(), resume after the fight.
-        -- This evaluates dead= conditions and applies effects in their authored
-        -- order, stopping at the first usable forced goto.
+        if action.data.resume_attack then
+            combat.phase=nil; self.actions={{kind="combat_attack",data={instruction=combat.owner},instruction=combat.owner}}
+            return self:_choose(1)
+        end
+        self:combat_blessing_prompt()
+        return {title="Combat",text=table.concat(combat.log,"\n"),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_attack" then
+        local blessing_enemy=Combat.current(self.state)
+        if not self.state.combat.defence_prompted and blessing_enemy and not blessing_enemy.playerdefence and Inventory.find_blessing(self.state,"defen") then
+            self.state.combat.phase="blessing_defence"; self:combat_blessing_prompt()
+            return {title="Use blessing?",text="Activate Defence through Faith before the first attack?",actions=self.actions,image=self.image}
+        end
+        local status=Combat.attack(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
+        local combat=self.state.combat; local log=table.concat(combat.log,"\n")
+        if status=="blocked" then
+            return {title="Combat event",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image}
+        end
+        if status=="ongoing" then
+            self.actions={}; self:add_action("Attack","combat_attack",action.data)
+            if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",action.data) end
+            for _,choice in ipairs(self.flee_choices[combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr}) end
+            self:add_combat_luck_action()
+            return {title="Combat — round "..combat.round,text=log,actions=self.actions,image=self.image}
+        end
+        if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        self.state.combat=nil; self.actions={}
         self:resume_section()
-        self.text[#self.text+1]=combat_result
+        local death_result=self:route_death(); if death_result then return death_result end
+        self.text[#self.text+1]="\n\n"..log.."\n\n"..(status=="won" and "You win the fight." or "You have been defeated.")
         return {title="Combat result",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_luck_reroll" then
+        local record,error_message=self.journal:undo(); if not record then return nil,error_message end
+        self.journal:discard_future()
+        if not Inventory.use_blessing(self.state,"luck") then return nil,"That blessing is no longer available." end
+        local combat=self.state.combat; self.actions={{kind="combat_attack",data={instruction=combat.owner},instruction=combat.owner}}
+        return self:_choose(1)
+    elseif action.kind=="combat_continue" then
+        self.actions={}
+        local frame=self.state.execution.frames[#self.state.execution.frames]
+        if frame and frame.kind=="combat_hook" and frame.completed then table.remove(self.state.execution.frames) end
+        local status=Combat.continue(self,function(kind,path,amount) return self:combat_hook(kind,path,amount) end)
+        local combat=self.state.combat; local log=table.concat(combat.log,"\n")
+        if status=="blocked" then return {title="Combat event",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image} end
+        if status=="ongoing" then
+            self:add_action("Attack","combat_attack",{instruction=combat.owner})
+            if Combat.stalemate(self) then self:add_action("Skip stalemated combat","combat_skip",{instruction=combat.owner}) end
+            for _,choice in ipairs(self.flee_choices[combat.group] or {}) do self:add_action(plain(choice),"combat_flee",{instruction=combat.owner,destination=choice.attr}) end
+            self:add_combat_luck_action()
+            return {title="Combat",text=log,actions=self.actions,image=self.image}
+        end
+        if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        self.state.combat=nil; self:resume_section()
+        local death_result=self:route_death(); if death_result then return death_result end
+        return {title="Combat result",text=table.concat(self.text).."\n\n"..log,actions=self.actions,image=self.image}
+    elseif action.kind=="combat_skip" then
+        local combat=self.state.combat
+        if not combat or not Combat.stalemate(self) then return nil,"Combat is not stalemated." end
+        if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        self.state.combat=nil; self.actions={}; self:resume_section()
+        local death_result=self:route_death(); if death_result then return death_result end
+        self.text[#self.text+1]="\n\nNeither side can harm the other; combat is skipped."
+        return {title="Combat skipped",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="combat_flee" then
+        local combat=self.state.combat; Combat.flee(self)
+        self.actions={}; if self.state.progress then for _,enemy in ipairs(combat.opponents) do self.state.progress.completed[enemy.path]=true end end
+        if action.data.destination then return self:load(action.data.destination.book or self.state.book,action.data.destination.section) end
+        self:resume_section(); return {title="Fled combat",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="market" then
         self:open_market(action.data)
         return {title="Market",text=table.concat(self.text),actions=self.actions}
@@ -947,7 +1909,7 @@ function Game:choose(index)
         local name=a.name or a.item or "item"
         if action.kind=="buy" then
             if self.state.shards<cost then return nil,"You cannot afford that." end
-            self.state.shards=self.state.shards-cost; State.add_item(self.state,item_from(a))
+            self.state.shards=self.state.shards-cost; State.add_item(self.state,item_from(a,action.data.node))
         else
             if not State.remove_item(self.state,name,1) then return nil,"You do not have that item." end
             self.state.shards=self.state.shards+cost
@@ -961,6 +1923,35 @@ function Game:choose(index)
         return {title="Market",text=table.concat(self.text),actions=self.actions}
     end
     return nil,"Unsupported interaction: "..tostring(action.kind)
+end
+
+function Game:choose(index)
+    local action=self.actions[index]
+    if not action then return nil,"Invalid choice" end
+    self.preview_text=nil
+    local metadata={kind=action.kind,instruction=action.instruction}
+    local node=type(action.data)=="table" and (action.data.node or (action.data.attr and action.data)) or nil
+    if node and node.attr then metadata.attr=State.copy(node.attr); metadata.ability=action.data.ability; metadata.node_name=node.name end
+    if action.kind=="random" or action.kind=="fight" then metadata.attr=State.copy(action.data.attr or {}) end
+    self.journal:begin(action.kind,metadata)
+    local progress=self.state.progress
+    local resolves={skillcheck=true,random=true,fight=true,training=true,["return"]=true,rest=true,mutate=true,setvar=true,group=true,
+        resurrection=true,resurrect=true,leave_market=true,["goto"]=true}
+    -- Starting a round-based fight is not resolution; its grouped instructions
+    -- are marked only after victory, defeat, flee, or an explicit stalemate skip.
+    if resolves[action.kind] and action.kind~="fight" and progress and action.instruction then progress.completed[action.instruction]=true end
+    self.state.pending=nil
+    local ok,result,err=pcall(self._choose,self,index)
+    if not ok or not result then
+        self.journal:rollback()
+        return nil,ok and err or result
+    end
+    if not self.state.pending then
+        self.state.pending={schema=1,kind="interaction",book=self.state.book,section=self.state.section,
+            instruction=action.instruction,resume_kind=action.kind,actions={}}
+    end
+    self.journal:commit()
+    return result,err
 end
 
 return Game

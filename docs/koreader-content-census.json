@@ -1,0 +1,809 @@
+{
+  "elements": 35770,
+  "files": 4450,
+  "schema": 1,
+  "scope": "book1 through book6 XML",
+  "tags": {
+    "abilities": {
+      "attributes": {},
+      "count": 6,
+      "support": "presentation"
+    },
+    "adjust": {
+      "attributes": {
+        "ability": 66,
+        "amount": 423,
+        "codeword": 40,
+        "crew": 346,
+        "default": 2,
+        "god": 24,
+        "greaterthan": 2,
+        "item": 27,
+        "modifier": 2,
+        "name": 5,
+        "profession": 22,
+        "ship": 9,
+        "tags": 1,
+        "title": 1,
+        "titleval": 2,
+        "value": 80
+      },
+      "count": 574,
+      "support": "partial"
+    },
+    "adjustmoney": {
+      "attributes": {
+        "cache": 13,
+        "force": 2,
+        "multiply": 89,
+        "name": 71
+      },
+      "count": 89,
+      "support": "partial"
+    },
+    "adventurer": {
+      "attributes": {
+        "gender": 36,
+        "name": 36,
+        "profession": 36
+      },
+      "count": 36,
+      "support": "presentation"
+    },
+    "adventurers": {
+      "attributes": {},
+      "count": 6,
+      "support": "presentation"
+    },
+    "armour": {
+      "attributes": {
+        "bonus": 223,
+        "buy": 118,
+        "buytags": 1,
+        "group": 4,
+        "name": 223,
+        "quantity": 3,
+        "sell": 153
+      },
+      "count": 223,
+      "support": "partial"
+    },
+    "b": {
+      "attributes": {},
+      "count": 580,
+      "support": "presentation"
+    },
+    "buy": {
+      "attributes": {
+        "ability": 5,
+        "bonus": 5,
+        "cargo": 28,
+        "crew": 41,
+        "flag": 1,
+        "force": 4,
+        "initialcrew": 8,
+        "item": 25,
+        "name": 5,
+        "quantity": 52,
+        "shards": 102,
+        "ship": 8,
+        "tags": 1,
+        "tool": 5
+      },
+      "count": 107,
+      "support": "partial"
+    },
+    "choice": {
+      "attributes": {
+        "book": 202,
+        "box": 94,
+        "currency": 1,
+        "dead": 11,
+        "flee": 16,
+        "god": 6,
+        "item": 30,
+        "pay": 38,
+        "profession": 4,
+        "revisit": 4,
+        "sail": 29,
+        "section": 4276,
+        "shards": 132,
+        "tags": 9
+      },
+      "count": 4276,
+      "support": "partial"
+    },
+    "choices": {
+      "attributes": {},
+      "count": 1316,
+      "support": "presentation"
+    },
+    "curse": {
+      "attributes": {
+        "cumulative": 4,
+        "lift": 1,
+        "name": 16
+      },
+      "count": 16,
+      "support": "partial"
+    },
+    "desc": {
+      "attributes": {},
+      "count": 14,
+      "support": "presentation"
+    },
+    "difficulty": {
+      "attributes": {
+        "ability": 488,
+        "flag": 9,
+        "force": 34,
+        "hidden": 1,
+        "level": 488,
+        "modifier": 4,
+        "var": 30
+      },
+      "count": 488,
+      "support": "partial"
+    },
+    "disease": {
+      "attributes": {
+        "name": 5
+      },
+      "count": 5,
+      "support": "partial"
+    },
+    "effect": {
+      "attributes": {
+        "ability": 78,
+        "bonus": 54,
+        "description": 1,
+        "divide": 2,
+        "target": 1,
+        "text": 8,
+        "type": 54,
+        "uses": 9,
+        "verb": 15
+      },
+      "count": 96,
+      "support": "partial"
+    },
+    "else": {
+      "attributes": {},
+      "count": 223,
+      "support": "partial"
+    },
+    "elseif": {
+      "attributes": {
+        "codeword": 5,
+        "crew": 4,
+        "equals": 3,
+        "god": 2,
+        "hidden": 2,
+        "item": 4,
+        "lessthan": 1,
+        "profession": 2,
+        "ship": 29,
+        "ticks": 3,
+        "title": 1,
+        "var": 4,
+        "weapon": 1
+      },
+      "count": 55,
+      "support": "partial"
+    },
+    "exclude": {
+      "attributes": {
+        "bonus": 1,
+        "item": 2,
+        "reason": 2,
+        "tags": 1
+      },
+      "count": 2,
+      "support": "partial"
+    },
+    "extrachoice": {
+      "attributes": {
+        "atbook": 2,
+        "atsection": 2,
+        "book": 3,
+        "key": 4,
+        "remove": 3,
+        "section": 4,
+        "tag": 2,
+        "text": 3
+      },
+      "count": 7,
+      "support": "partial"
+    },
+    "failure": {
+      "attributes": {
+        "book": 2,
+        "section": 375,
+        "var": 33
+      },
+      "count": 507,
+      "support": "partial"
+    },
+    "field": {
+      "attributes": {
+        "label": 4,
+        "name": 6,
+        "text": 2
+      },
+      "count": 6,
+      "support": "implemented"
+    },
+    "fight": {
+      "attributes": {
+        "abilitydamaged": 2,
+        "attackdice": 1,
+        "attacks": 1,
+        "combat": 212,
+        "defence": 212,
+        "flee": 4,
+        "group": 12,
+        "modifiers": 1,
+        "name": 212,
+        "playerdefence": 2,
+        "playerfirst": 1,
+        "predamage": 2,
+        "stamina": 212,
+        "staminalost": 1,
+        "usecache": 1
+      },
+      "count": 212,
+      "support": "partial"
+    },
+    "fightdamage": {
+      "attributes": {
+        "type": 13
+      },
+      "count": 14,
+      "support": "partial"
+    },
+    "fightround": {
+      "attributes": {
+        "pre": 3
+      },
+      "count": 3,
+      "support": "partial"
+    },
+    "flee": {
+      "attributes": {},
+      "count": 21,
+      "support": "partial"
+    },
+    "gain": {
+      "attributes": {
+        "ability": 131,
+        "amount": 131,
+        "blessing": 25,
+        "codeword": 21,
+        "crew": 1,
+        "flag": 8,
+        "force": 3,
+        "hidden": 2,
+        "price": 1,
+        "shards": 189,
+        "title": 18
+      },
+      "count": 386,
+      "support": "partial"
+    },
+    "gold": {
+      "attributes": {
+        "amount": 6
+      },
+      "count": 6,
+      "support": "presentation"
+    },
+    "goto": {
+      "attributes": {
+        "book": 77,
+        "dead": 61,
+        "force": 153,
+        "hidden": 7,
+        "price": 3,
+        "sail": 15,
+        "section": 3460,
+        "visit": 1
+      },
+      "count": 3460,
+      "support": "partial"
+    },
+    "group": {
+      "attributes": {
+        "force": 37
+      },
+      "count": 203,
+      "support": "partial"
+    },
+    "header": {
+      "attributes": {
+        "header1": 16,
+        "header2": 16,
+        "header3": 9,
+        "type": 158
+      },
+      "count": 178,
+      "support": "presentation"
+    },
+    "i": {
+      "attributes": {},
+      "count": 306,
+      "support": "presentation"
+    },
+    "if": {
+      "attributes": {
+        "ability": 22,
+        "armour": 4,
+        "blessing": 78,
+        "bonus": 5,
+        "book": 30,
+        "cache": 9,
+        "cargo": 2,
+        "codeword": 363,
+        "crew": 7,
+        "curse": 3,
+        "dead": 25,
+        "dice": 3,
+        "disease": 1,
+        "docked": 3,
+        "equals": 52,
+        "gender": 3,
+        "god": 115,
+        "greaterthan": 61,
+        "group": 2,
+        "item": 149,
+        "lessthan": 13,
+        "modifier": 2,
+        "name": 3,
+        "not": 121,
+        "poison": 2,
+        "profession": 57,
+        "resurrection": 8,
+        "safeaddgod": 41,
+        "safeaddgodd": 1,
+        "shards": 141,
+        "ship": 36,
+        "tags": 9,
+        "ticks": 165,
+        "title": 67,
+        "tool": 1,
+        "using": 3,
+        "var": 101,
+        "weapon": 11
+      },
+      "count": 1424,
+      "support": "partial"
+    },
+    "image": {
+      "attributes": {
+        "book": 3,
+        "file": 4,
+        "title": 4
+      },
+      "count": 4,
+      "support": "implemented"
+    },
+    "include": {
+      "attributes": {
+        "armour": 1,
+        "weapon": 1
+      },
+      "count": 2,
+      "support": "partial"
+    },
+    "item": {
+      "attributes": {
+        "buy": 158,
+        "buytags": 2,
+        "flag": 5,
+        "force": 4,
+        "group": 21,
+        "hidden": 3,
+        "name": 516,
+        "quantity": 5,
+        "replace": 1,
+        "sell": 202,
+        "tags": 45,
+        "verb": 1
+      },
+      "count": 516,
+      "support": "partial"
+    },
+    "itemcache": {
+      "attributes": {
+        "itemlimit": 3,
+        "max": 1,
+        "name": 31,
+        "text": 31
+      },
+      "count": 31,
+      "support": "partial"
+    },
+    "items": {
+      "attributes": {
+        "group": 7,
+        "limit": 7
+      },
+      "count": 13,
+      "support": "presentation"
+    },
+    "lose": {
+      "attributes": {
+        "ability": 92,
+        "amount": 92,
+        "armour": 6,
+        "blessing": 84,
+        "bonus": 5,
+        "cache": 41,
+        "cargo": 30,
+        "chance": 1,
+        "codeword": 384,
+        "crew": 19,
+        "curse": 23,
+        "disease": 16,
+        "fatal": 11,
+        "flag": 28,
+        "force": 4,
+        "god": 45,
+        "group": 2,
+        "hidden": 230,
+        "item": 236,
+        "itemat": 2,
+        "items": 1,
+        "multiple": 12,
+        "poison": 9,
+        "price": 75,
+        "resurrection": 3,
+        "shards": 332,
+        "ship": 50,
+        "stamina": 250,
+        "staminato": 17,
+        "tags": 10,
+        "title": 22,
+        "using": 4,
+        "weapon": 9
+      },
+      "count": 1544,
+      "support": "partial"
+    },
+    "market": {
+      "attributes": {
+        "buy": 3,
+        "currency": 1,
+        "sell": 10
+      },
+      "count": 93,
+      "support": "partial"
+    },
+    "moneycache": {
+      "attributes": {
+        "max": 3,
+        "multiples": 14,
+        "name": 25,
+        "text": 25,
+        "withdrawcharge": 5
+      },
+      "count": 25,
+      "support": "partial"
+    },
+    "outcome": {
+      "attributes": {
+        "blessing": 6,
+        "book": 18,
+        "codeword": 16,
+        "flag": 39,
+        "range": 1348,
+        "section": 1007,
+        "var": 36
+      },
+      "count": 1373,
+      "support": "partial"
+    },
+    "outcomes": {
+      "attributes": {
+        "flag": 4,
+        "var": 2
+      },
+      "count": 795,
+      "support": "partial"
+    },
+    "p": {
+      "attributes": {},
+      "count": 8451,
+      "support": "presentation"
+    },
+    "poison": {
+      "attributes": {
+        "name": 5
+      },
+      "count": 5,
+      "support": "partial"
+    },
+    "price": {
+      "attributes": {
+        "flag": 2,
+        "shards": 2
+      },
+      "count": 2,
+      "support": "implemented"
+    },
+    "profession": {
+      "attributes": {
+        "name": 36
+      },
+      "count": 36,
+      "support": "presentation"
+    },
+    "random": {
+      "attributes": {
+        "dice": 366,
+        "flag": 10,
+        "force": 2,
+        "type": 204,
+        "var": 105
+      },
+      "count": 595,
+      "support": "partial"
+    },
+    "rank": {
+      "attributes": {
+        "amount": 6
+      },
+      "count": 6,
+      "support": "presentation"
+    },
+    "rankcheck": {
+      "attributes": {
+        "add": 23,
+        "dice": 45
+      },
+      "count": 54,
+      "support": "partial"
+    },
+    "reroll": {
+      "attributes": {},
+      "count": 9,
+      "support": "partial"
+    },
+    "rest": {
+      "attributes": {
+        "hidden": 1,
+        "shards": 38,
+        "stamina": 86
+      },
+      "count": 148,
+      "support": "partial"
+    },
+    "resurrection": {
+      "attributes": {
+        "book": 16,
+        "flag": 1,
+        "god": 7,
+        "hidden": 2,
+        "section": 16,
+        "shards": 9,
+        "supplemental": 1,
+        "text": 15
+      },
+      "count": 61,
+      "support": "partial"
+    },
+    "return": {
+      "attributes": {
+        "force": 3
+      },
+      "count": 16,
+      "support": "partial"
+    },
+    "section": {
+      "attributes": {
+        "boxes": 158,
+        "dock": 94,
+        "image": 190,
+        "name": 4444,
+        "profession": 36,
+        "start": 6,
+        "tag": 61,
+        "todock": 2
+      },
+      "count": 4444,
+      "support": "presentation"
+    },
+    "sectionview": {
+      "attributes": {
+        "random": 1,
+        "title": 1
+      },
+      "count": 1,
+      "support": "missing"
+    },
+    "sell": {
+      "attributes": {
+        "cargo": 1,
+        "item": 5,
+        "price": 1,
+        "quantity": 1,
+        "shards": 5
+      },
+      "count": 6,
+      "support": "partial"
+    },
+    "set": {
+      "attributes": {
+        "cache": 4,
+        "codeword": 3,
+        "dock": 14,
+        "force": 12,
+        "hidden": 8,
+        "item": 18,
+        "modifier": 30,
+        "tags": 17,
+        "value": 261,
+        "var": 264,
+        "weapon": 1
+      },
+      "count": 278,
+      "support": "partial"
+    },
+    "sold": {
+      "attributes": {
+        "item": 1,
+        "tags": 1
+      },
+      "count": 2,
+      "support": "partial"
+    },
+    "stamina": {
+      "attributes": {
+        "amount": 6
+      },
+      "count": 6,
+      "support": "presentation"
+    },
+    "starting": {
+      "attributes": {},
+      "count": 6,
+      "support": "presentation"
+    },
+    "success": {
+      "attributes": {
+        "ability": 2,
+        "book": 10,
+        "section": 387,
+        "var": 26
+      },
+      "count": 517,
+      "support": "partial"
+    },
+    "text": {
+      "attributes": {},
+      "count": 210,
+      "support": "presentation"
+    },
+    "tick": {
+      "attributes": {
+        "ability": 11,
+        "addbonus": 9,
+        "addtag": 7,
+        "amount": 18,
+        "blessing": 84,
+        "bonus": 10,
+        "cache": 59,
+        "cargo": 2,
+        "codeword": 415,
+        "count": 16,
+        "crew": 3,
+        "effect": 5,
+        "flag": 44,
+        "force": 14,
+        "god": 48,
+        "hidden": 248,
+        "item": 6,
+        "name": 28,
+        "permanent": 1,
+        "price": 7,
+        "profession": 2,
+        "quantity": 1,
+        "removetag": 2,
+        "shards": 22,
+        "special": 66,
+        "tag": 1,
+        "tags": 3,
+        "titaladjust": 1,
+        "title": 8,
+        "titleadjust": 2,
+        "titlepattern": 3,
+        "titlevalue": 3,
+        "using": 1,
+        "weapon": 7
+      },
+      "count": 867,
+      "support": "partial"
+    },
+    "tool": {
+      "attributes": {
+        "ability": 272,
+        "bonus": 272,
+        "buy": 155,
+        "flag": 1,
+        "group": 20,
+        "name": 272,
+        "replace": 2,
+        "sell": 193
+      },
+      "count": 272,
+      "support": "partial"
+    },
+    "trade": {
+      "attributes": {
+        "buy": 156,
+        "cargo": 119,
+        "initialcrew": 38,
+        "name": 1,
+        "quantity": 1,
+        "sell": 140,
+        "ship": 59
+      },
+      "count": 178,
+      "support": "partial"
+    },
+    "training": {
+      "attributes": {
+        "ability": 57,
+        "add": 1,
+        "dice": 27,
+        "var": 1
+      },
+      "count": 62,
+      "support": "partial"
+    },
+    "transfer": {
+      "attributes": {
+        "armour": 5,
+        "bonus": 1,
+        "force": 5,
+        "from": 8,
+        "hidden": 9,
+        "item": 13,
+        "limit": 3,
+        "price": 1,
+        "shards": 4,
+        "to": 17,
+        "weapon": 5,
+        "xarmour": 1,
+        "xgroup": 1,
+        "xitem": 1
+      },
+      "count": 25,
+      "support": "partial"
+    },
+    "weapon": {
+      "attributes": {
+        "bonus": 205,
+        "buy": 101,
+        "buytags": 1,
+        "flag": 1,
+        "force": 1,
+        "group": 7,
+        "name": 154,
+        "profession": 24,
+        "quantity": 9,
+        "replace": 2,
+        "sell": 117,
+        "tags": 2
+      },
+      "count": 270,
+      "support": "partial"
+    },
+    "while": {
+      "attributes": {
+        "var": 2
+      },
+      "count": 2,
+      "support": "partial"
+    }
+  }
+}

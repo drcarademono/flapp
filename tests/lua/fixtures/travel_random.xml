@@ -1,0 +1,4 @@
+<section id="test">
+  <random type="travel" dice="1" var="encounter">Travel roll</random>
+  <set var="finished" value="1"/>
+</section>
