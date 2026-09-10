@@ -1,0 +1,7 @@
+<section>
+  <random dice="1" var="weather">Check the weather</random>
+  <outcomes>
+    <outcome var="weather" range="6" blessing="storm" section="storm">A deadly storm</outcome>
+    <outcome section="safe">Safe passage</outcome>
+  </outcomes>
+</section>

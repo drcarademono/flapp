@@ -196,6 +196,16 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('while loop execution limit exceeded at ', game)
         self.assertTrue((ROOT / "tests" / "lua" / "fixtures" / "while_random.xml").is_file())
 
+    def test_outcomes_use_owned_variables_and_preventing_blessings(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:outcome_match(node,parent_value)", game)
+        self.assertIn("if a.var then value=self.state.variables[a.var] end", game)
+        self.assertIn("conditions.blessing=nil", game)
+        self.assertIn("Inventory.find_blessing(self.state,a.blessing)", game)
+        self.assertIn("has_state_outcomes=true", game)
+        self.assertIn("if matched and not prevented then self:walk(c,true); break end", game)
+        self.assertTrue((ROOT / "tests" / "lua" / "fixtures" / "outcome_blessing.xml").is_file())
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()
@@ -217,8 +227,8 @@ class KOReaderPluginTests(unittest.TestCase):
         source = (PLUGIN / "core" / "game.lua").read_text()
         self.assertIn('local default_var=has_check_branch and "*difficulty*" or "*random*"', source)
         self.assertIn("local value=self.state.variables[a.var or default_var]", source)
-        self.assertIn('c.name=="success" and value~=nil and value>0', source)
-        self.assertIn('c.name=="failure" and value~=nil and value<=0', source)
+        self.assertIn('c.name=="success" then matched=value~=nil and value>0', source)
+        self.assertIn('c.name=="failure" then matched=value~=nil and value<=0', source)
         section = (ROOT / "book1" / "257.xml").read_text()
         self.assertIn('<success section="630"/>', section)
         self.assertIn('<failure section="36"/>', section)

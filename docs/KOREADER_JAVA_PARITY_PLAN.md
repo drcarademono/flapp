@@ -327,6 +327,11 @@ iteration. A completed iteration resets descendant applied/completed markers,
 matching Java's child-runner reset, while a save in a blocking child restores
 that exact iteration without replaying its already completed mutations.
 
+Outcome matching now honors an outcome's own `var`, exact/range/or/open-ended
+ranges, flag and codeword prerequisites, and Java's inverted blessing behavior:
+a matching blessing prevents that outcome and permits evaluation to continue to
+the following fallback outcome.
+
 - [ ] Complete `SetVarNode` modifier/cache/item/dock forms.
 - [ ] Complete `AdjustNode` thresholds, defaults, title values, professions,
   abilities, items, ships, cargo, and crew.

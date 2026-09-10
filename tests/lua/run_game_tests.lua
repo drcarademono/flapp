@@ -228,6 +228,19 @@ local function serializable_while_loop()
     equal(#saved.execution.frames,0,"while frame removed on completion")
 end
 
+local function outcome_rules()
+    local protected=ready_state(); Inventory.bless(protected,{blessing="storm"})
+    local game=Game.new(catalog("outcome_blessing.xml"),protected,function() return 6 end)
+    assert(game:load("1","test")); assert(game:choose(action_index(game,"random")))
+    equal(game.actions[1].label,"Safe passage","blessing suppresses matching outcome")
+    local exposed=ready_state(); local other=Game.new(catalog("outcome_blessing.xml"),exposed,function() return 6 end)
+    assert(other:load("1","test")); assert(other:choose(action_index(other,"random")))
+    equal(other.actions[1].label,"A deadly storm","unprotected matching outcome")
+    exposed.variables.alternate=2
+    local node={attr={var="alternate",range="2"}}
+    local matched=other:outcome_match(node,6); assert(matched,"outcome owns its variable")
+end
+
 effects_and_afflictions()
 embedded_use_program()
 ambiguous_item_loss()
@@ -236,4 +249,5 @@ adventurer_stat_rules()
 rest_rules()
 set_variable_rules()
 serializable_while_loop()
+outcome_rules()
 io.write("Lua Java-oracle scenarios passed\n")

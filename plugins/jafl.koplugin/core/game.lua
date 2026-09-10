@@ -616,6 +616,17 @@ local function range_matches(spec, value)
     return value==tonumber(spec)
 end
 
+function Game:outcome_match(node,parent_value)
+    local a=node.attr or {}; local value=parent_value
+    if a.var then value=self.state.variables[a.var] end
+    if a.range and (value==nil or not range_matches(a.range,value)) then return false,false end
+    local conditions=State.copy(a)
+    conditions.range=nil; conditions.var=nil; conditions.section=nil
+    conditions.blessing=nil -- a matching blessing prevents, rather than enables, an outcome
+    if not self:condition(conditions) then return false,false end
+    return true,a.blessing and Inventory.find_blessing(self.state,a.blessing)~=nil
+end
+
 local function pair_fight_nodes(root)
     local fights,damage,rounds,flees,by_path,groups,flee_choices={},{},{},{},{},{},{}
     local function visit(node,parent,index,path)
@@ -1254,20 +1265,25 @@ function Game:walk(node, enabled)
             -- still executes ordinary ChoiceNodes in the outcomes container
             -- (for example the "No parchment" exit in 2.543), while leaving
             -- success/failure destinations dormant until a result exists.
+            local has_state_outcomes=false
             for _,child in ipairs(node.children or {}) do
                 if type(child)=="table" and child.name=="choice" then self:walk(child,true)
                 elseif type(child)=="table" and (child.name=="success" or child.name=="failure") then
                     self:attach_check_branch(child)
+                elseif type(child)=="table" and child.name=="outcome" and
+                        not child.attr.range and (child.attr.codeword or child.attr.flag) then
+                    has_state_outcomes=true
                 end
             end
-            return
+            if not has_state_outcomes then return end
         end
         for _,c in ipairs(node.children or {}) do
             if type(c)=="table" then
-                local matched=c.name=="outcome" and range_matches(c.attr.range,value) and self:condition(c.attr)
-                    or c.name=="success" and value~=nil and value>0
-                    or c.name=="failure" and value~=nil and value<=0
-                if matched then self:walk(c,true); break end
+                local matched,prevented=false,false
+                if c.name=="outcome" then matched,prevented=self:outcome_match(c,value)
+                elseif c.name=="success" then matched=value~=nil and value>0
+                elseif c.name=="failure" then matched=value~=nil and value<=0 end
+                if matched and not prevented then self:walk(c,true); break end
             end
         end
         return
