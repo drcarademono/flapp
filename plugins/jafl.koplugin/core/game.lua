@@ -95,6 +95,45 @@ function Game:value(v)
     end)
 end
 
+function Game:set_value(attributes)
+    local a=attributes or {}
+    if a.codeword then return tonumber(self.state.codewords[a.codeword]) or (self.state.codewords[a.codeword] and 1 or 0) end
+    local source=self.state
+    if a.cache then source=self.state.caches[a.cache] or State.new_cache() end
+    local function resolve(identifier)
+        local key=identifier:lower()
+        if key=="matches" then return #Inventory.matching_indices(source,a,true) end
+        if key=="weapon" or key=="armour" then
+            local indices=Inventory.matching_indices(source,a,true)
+            if #indices==1 and source.items[indices[1]].kind==key then return tonumber(source.items[indices[1]].bonus) or 0 end
+            if not a.cache then
+                local equipped=self.state.models.equipment[key]
+                for _,item in ipairs(self.state.items) do if item.id==equipped and item.kind==key then return tonumber(item.bonus) or 0 end end
+            end
+            return 0
+        end
+        if key=="stamina" then return a.modifier and self.state.max_stamina or self.state.stamina end
+        if key=="shards" then return tonumber(source.shards) or 0 end
+        if key=="crew" then
+            local ships=Ships.find(self.state,nil,true)
+            return #ships==1 and self.state.models.fleet.ships[ships[1]].crew.quality or 0
+        end
+        for _,ability in ipairs(State.ability_names) do if ability:lower()==key then return self:ability(ability,a.modifier) end end
+        if key=="rank" then return self:ability("Rank",a.modifier) end
+        return tonumber(self.state.variables[identifier] or self.state.variables[key]) or 0
+    end
+    return Expression.evaluate(a.value or a.amount or "0",resolve)
+end
+
+function Game:apply_set(node)
+    local a=node.attr or {}
+    if a.var or a.name then self.state.variables[a.name or a.var]=self:set_value(a) end
+    if a.dock then
+        for _,index in ipairs(Ships.find(self.state,nil,true)) do self.state.models.fleet.ships[index].docked=a.dock end
+    end
+    if self.state.progress then self.state.progress.applied[node._path]=true end
+end
+
 function Game:condition(a)
     local s, ok = self.state, true
     if a.codeword then
@@ -1035,7 +1074,8 @@ function Game:walk(node, enabled)
     local blocker=n=="goto" or n=="random" or n=="difficulty" or n=="rankcheck" or n=="reroll" or n=="fight" or
         n=="return" or n=="training" or n=="market" or n=="trade" or n=="resurrection" or n=="group"
     if blocker and self.restoring and self.state.progress.completed[node._path] then return end
-    local mutation=n=="set" or n=="tick" or n=="gain" or n=="lose" or
+    if n=="set" and self.restoring and self.state.progress.applied[node._path] then return end
+    local mutation=n=="tick" or n=="gain" or n=="lose" or
         n=="adjustmoney" or n=="transfer" or n=="curse" or n=="disease" or n=="poison"
     if mutation and self.restoring and self.state.progress.applied[node._path] then return end
     local optional_mutation=(n=="tick" or n=="gain" or n=="lose") and not truth(a.force,true)
@@ -1091,9 +1131,11 @@ function Game:walk(node, enabled)
         end
         return
     elseif n=="set" then
-        local value=a.codeword and (self.state.codewords[a.codeword] and 1 or 0) or self:value(a.value or a.amount)
-        self.state.variables[a.name or a.var or "*"]=value
-        if a.dock then for _,ship in ipairs(self.state.models.fleet.ships) do ship.docked=a.dock end end
+        local visible=plain(node)~="" and not truth(a.hidden,false)
+        if visible then
+            self:add_action(self:node_text(node) or "Set value","setvar",node)
+            if truth(a.force,true) then self:pause_section() end
+        else self:apply_set(node) end
     elseif n=="tick" then
         if not truth(a.force,true) then self:add_action(self:node_text(node) or "Apply gain","mutate",{node=node,direction=1}); return end
         if plain(node)=="" and not truth(a.hidden,false) then local text=self:node_text(node); if text then self.text[#self.text+1]=text end end
@@ -1504,6 +1546,14 @@ function Game:_choose(index)
         self.state.progress.applied[node._path]=true
         for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
         return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
+    elseif action.kind=="setvar" then
+        local node=action.data
+        self:apply_set(node)
+        for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
+        if truth(node.attr.force,true) then
+            self.actions={}; self:resume_section()
+        end
+        return {title="Action applied",text=table.concat(self.text),actions=self.actions,image=self.image}
     elseif action.kind=="pay_price" then
         local data=action.data
         local paid,cost=self:pay_price(data.node)
@@ -1851,7 +1901,7 @@ function Game:choose(index)
     if action.kind=="random" or action.kind=="fight" then metadata.attr=State.copy(action.data.attr or {}) end
     self.journal:begin(action.kind,metadata)
     local progress=self.state.progress
-    local resolves={skillcheck=true,random=true,fight=true,training=true,["return"]=true,rest=true,mutate=true,group=true,
+    local resolves={skillcheck=true,random=true,fight=true,training=true,["return"]=true,rest=true,mutate=true,setvar=true,group=true,
         resurrection=true,resurrect=true,leave_market=true,["goto"]=true}
     -- Starting a round-based fight is not resolution; its grouped instructions
     -- are marked only after victory, defeat, flee, or an explicit stalemate skip.

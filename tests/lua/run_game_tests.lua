@@ -193,10 +193,29 @@ local function rest_rules()
     assert(game:rest_details(free).used,"free rest defaults to once")
 end
 
+local function set_variable_rules()
+    local state=ready_state(); state.shards=42; state.stamina=7; state.max_stamina=19
+    state.codewords.Counter=3
+    state.items={State.new_item{id="sword",name="sword",kind="weapon",bonus=2,equipped=true,tags={light=true}}}
+    state.models.equipment.weapon="sword"
+    state.caches.store=State.new_cache{shards=300,items={State.new_item{id="axe",name="axe",kind="weapon",bonus=4}}}
+    local game=Game.new(catalog("forced_random.xml"),state,function() return 1 end)
+    equal(game:set_value{value="shards/2"},21,"inventory money resolver")
+    equal(game:set_value{value="shards/100",cache="store"},3,"cache money resolver")
+    equal(game:set_value{value="weapon"},2,"equipped weapon resolver")
+    equal(game:set_value{value="weapon",cache="store",item="?"},4,"cache weapon resolver")
+    equal(game:set_value{value="matches",item="?",tags="light"},1,"item match resolver")
+    equal(game:set_value{codeword="Counter"},3,"numeric codeword resolver")
+    equal(game:set_value{value="stamina",modifier="affected"},19,"affected stamina resolver")
+    local node={name="set",attr={var="answer",value="shards+1"},children={},_path="set:value"}
+    game:apply_set(node); equal(state.variables.answer,43,"set variable application")
+end
+
 effects_and_afflictions()
 embedded_use_program()
 ambiguous_item_loss()
 blessing_prompts()
 adventurer_stat_rules()
 rest_rules()
+set_variable_rules()
 io.write("Lua Java-oracle scenarios passed\n")

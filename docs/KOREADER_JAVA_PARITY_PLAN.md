@@ -316,6 +316,12 @@ conditions; supports automatic and derived values; and contributes to random,
 check, Rank-check, and loss adjustments. Exact title-pattern lookup, ambiguous
 ship selection, roll ownership, and Java-oracle comparison remain open.
 
+`SetVarNode` now evaluates expressions through its Java-specific context:
+natural/affected abilities, Stamina, inventory or cache Shards, unique weapon
+and armour bonuses, match counts, crew, codeword values, and ordinary section
+variables. It also distinguishes invisible automatic sets from authored
+forced/optional actions and docks only ships at the current location.
+
 - [ ] Complete `SetVarNode` modifier/cache/item/dock forms.
 - [ ] Complete `AdjustNode` thresholds, defaults, title values, professions,
   abilities, items, ships, cargo, and crew.

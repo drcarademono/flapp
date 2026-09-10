@@ -176,6 +176,16 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("math.floor(missing/fixed)", game)
         self.assertIn("details.once and self.state.progress", game)
 
+    def test_setvar_uses_java_contextual_resolver_and_visible_actions(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:set_value(attributes)", game)
+        self.assertIn("function Game:apply_set(node)", game)
+        self.assertIn('if key=="matches" then', game)
+        self.assertIn('if key=="weapon" or key=="armour" then', game)
+        self.assertIn('if key=="crew" then', game)
+        self.assertIn('self:add_action(self:node_text(node) or "Set value","setvar",node)', game)
+        self.assertIn('action.kind=="setvar"', game)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()
