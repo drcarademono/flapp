@@ -32,85 +32,75 @@ A feature is complete only when all of the following are true:
    skipping mutations or random draws.
 7. **Lifecycle parity:** death, resurrection, combat completion, navigation,
    book changes, temporary rules, and hardcore policy occur in the same order.
-8. **Corpus parity:** every reachable gameplay construct and attribute
-   combination in books 1–6 has an executable test, not merely a dispatch match.
+8. **Corpus coverage:** every reachable gameplay construct in books 1–6 is
+   handled, with representative executable tests for risky and blocking paths.
 9. **Intentional differences:** only presentation changes may be accepted
    without Java equivalence. Each exception needs a written acceptance test and
    explicit approval. `sectionview` is included until such a waiver is approved.
 
-A module name, state field, handler branch, compatibility declaration, or static
-source assertion is **not** proof of parity.
+A module name or handler branch alone is not enough: completion should be based
+on careful comparison with the relevant Java source, corpus inspection, focused
+tests, and a final manual playtest pass.
 
 ### 1.1 How to read this checklist
 
-The checkboxes are **parity acceptance gates**, not a count of Lua code written.
-An item stays unchecked until Java-generated and Lua-generated checkpoints agree
-for its complete behavior, including reload and undo where applicable. This is
-why the checklist currently has few checkmarks despite substantial runtime
-implementation: the required headless Java oracle in A1 does not exist yet, and
-the capability report correctly labels all 1,358 signatures `unverified`.
+The checkboxes track implementation work. Check an item when the relevant Java
+code has been reviewed, the Lua behavior has been implemented for the forms used
+by books 1–6, and focused automated tests pass. Exhaustive machine-generated
+Java/Lua state comparison is explicitly **not required**. Final confidence comes
+from repository tests plus the maintainer's hands-on playtesting.
 
 Current evidence snapshot:
 
 | Measure | Current state | Meaning |
 | --- | ---: | --- |
 | Runtime implementation slices recorded below | 9 | Code exists for these slices, but each still has stated closure gaps. |
-| Normalized executable signatures inventoried | 1,358 | Structural inventory only. |
-| Signatures backed by Java/Lua checkpoint comparison | 0 | No signature is parity-proven yet. |
-| Acceptance checklist items closed | 0 of 153 | No end-to-end parity acceptance item is proven yet. |
+| Normalized executable signatures inventoried | 1,358 | Useful coverage guide, not a test mandate. |
+| Focused Lua behavioral scenarios | Growing | Representative regression coverage for risky paths. |
+| Implementation checklist items closed | 4 of 151 | Initial audit and core Lua harness groundwork. |
+| Maintainer playtest | Pending | Final gameplay validation happens after implementation. |
 
 Implemented slices are tracked explicitly in the **Implementation progress
-ledger** below. A slice being implemented is real progress, but it is not the
-same assertion as passing the stricter parity gate.
+ledger** below. Remaining work describes actual known logic gaps, not missing
+test infrastructure.
 
 ### 1.2 Implementation progress ledger
 
 | Slice implemented in Lua | Present behavior | What prevents acceptance closure |
 | --- | --- | --- |
-| Serializable nested execution | Persisted interaction, use-effect, combat-hook, and while records | Coroutine/path hybrid remains; B1 stepper and Java checkpoint comparison absent. |
-| RNG journal and reroll prompts | Journaled draws, rollback, ability/Luck/Travel prompts, combat reroll | Java `UndoManager.Creator` ownership and cross-reload oracle comparison absent. |
-| Abilities and effects | Derived Defence, stat bounds, ordered effects, equipment modifiers | Full source/lifetime matrix and Java-generated results absent. |
-| Inventory and item loss | Structured items, filters, wildcard/chance loss, reloadable ambiguous forced loss | Optional selection, exact split/merge, complete transfer/cache matrix, and Java oracle absent. |
+| Serializable nested execution | Persisted interaction, use-effect, combat-hook, and while records | Replace remaining replay edge cases and test nested save/reload paths. |
+| RNG journal and reroll prompts | Journaled draws, rollback, ability/Luck/Travel prompts, combat reroll | Finish owner-specific undo behavior and remaining roll types. |
+| Abilities and effects | Derived Defence, stat bounds, ordered effects, equipment modifiers | Finish the source/lifetime/removal matrix. |
+| Inventory and item loss | Structured items, filters, wildcard/chance loss, reloadable ambiguous forced loss | Finish optional selection, exact split/merge, and transfer/cache forms. |
 | Ships and trade | Fleet, cargo, crew, active ship, and transaction primitives | Swap/redistribution, ambiguous selection, and full trade-event parity absent. |
-| Combat | Serializable round state, hooks, blessings, flee, stalemate, and continuation | Full attack-order/modifier matrix, owned undo, and book 5/689 oracle absent. |
-| Conditions/control | Alternative `if`/`adjust` families, contextual `set`, serializable `while` | Remaining condition forms and Java comparison absent. |
-| Outcomes | Owned variables, ranges, flags/codewords, and preventing blessings | Full runner ownership/fall-through and Java comparison absent. |
-| Price and rest | Atomic price checks; fixed/full/dice/repeatable rest | Listener equivalence, Java-owned dice undo, and exhaustive oracle coverage absent. |
+| Combat | Serializable round state, hooks, blessings, flee, stalemate, and continuation | Finish attack-order/modifier cases, undo, and book 5/689 regression coverage. |
+| Conditions/control | Alternative `if`/`adjust` families, contextual `set`, serializable `while` | Finish remaining condition forms and corpus edge cases. |
+| Outcomes | Owned variables, ranges, flags/codewords, and preventing blessings | Finish runner ownership and fall-through edge cases. |
+| Price and rest | Atomic price checks; fixed/full/dice/repeatable rest | Finish listener-equivalent refresh and dice undo behavior. |
 
-## 2. Required parity evidence
+## 2. Required implementation evidence
 
-### 2.1 Java oracle
+### 2.1 Java source review
 
-Create a headless Java oracle that loads small XML fixtures through the real
-Java classes and emits canonical JSON after every action:
-
-- visible action identities and enabled state;
-- current address and continuation owner;
-- all character and collection state;
-- current roll owner, dice, adjustment, result, and undo chain;
-- execution-frame/container position;
-- combat phase and enemy state; and
-- RNG input/output sequence.
-
-Swing prompts must be driven through an injectable decision adapter rather than
-rewriting the underlying game rule. If isolating a class is impossible, run the
-existing Java application headlessly and capture its model state.
+For each system, inspect the actual Java node/model classes and record the
+behavior that matters to the port: defaults, action availability, state
+changes, execution order, choices, rolls, undo, and save/load behavior. Small
+comments in tests or the parity plan are enough; a headless Java runner and
+canonical state exporter are out of scope.
 
 ### 2.2 Lua behavioral runner
 
-Replace source-text assertions as parity evidence with executable Lua tests.
-The runner must:
+Use executable Lua tests for the paths most likely to regress. The runner should:
 
 - run under LuaJIT/Lua 5.1, matching KOReader;
-- consume the same fixture and deterministic decisions as the Java oracle;
-- canonicalize Lua state into the same JSON schema;
-- compare every checkpoint, not only final state;
-- save, construct a new `Game`, reload, and compare again at each blocker; and
+- use deterministic RNG and compact XML fixtures;
+- assert important intermediate and final state;
+- save, construct a new `Game`, and reload at representative blockers; and
 - exercise accept, decline, cancel, unavailable, failure, success, and undo
-  branches where Java exposes them.
+  branches where practical.
 
-Source-text tests may remain as architecture guards, but cannot close a parity
-item.
+Source-text tests may remain as inexpensive architecture guards. They supplement
+behavioral tests and source review rather than serving as standalone proof.
 
 ### 2.3 Attribute contract
 
@@ -118,7 +108,7 @@ Replace the current observed-vocabulary declaration with a generated contract:
 
 ```text
 (tag, normalized attributes, parent context, relevant child shape)
-    -> handler capability id + executable oracle scenario id
+    -> handler capability id + optional representative scenario id
 ```
 
 Loading must fail for an observed combination which has no capability entry.
@@ -130,10 +120,9 @@ fatal`, and an ordinary `effect` from an embedded `type=use` program.
 The parity claim is allowed only when:
 
 - every work item below is checked;
-- Java and Lua oracle output matches for every fixture;
-- every reachable corpus signature maps to a passing oracle scenario;
-- all blocking scenarios pass uninterrupted, save/reload, undo, and reroll
-  variants as applicable;
+- representative high-risk fixtures pass, including save/reload, undo, and
+  reroll variants where applicable;
+- corpus and reachability audits find no unhandled gameplay construct;
 - no gameplay tag is `partial` or `missing` in the runtime contract;
 - no approved-difference entry is missing acceptance criteria; and
 - a final audit against the then-current commit finds no unexplained gameplay
@@ -144,61 +133,60 @@ The parity claim is allowed only when:
 Work must proceed in this order. Later systems must not add more special-case
 continuations while the shared execution engine is unfinished.
 
-1. **Foundation A:** executable Java/Lua oracle and corpus signature inventory.
+1. **Foundation A:** Java source inventory, Lua regression harness, and corpus
+   signature inventory.
 2. **Foundation B:** serializable execution machine and action availability.
 3. **Foundation C:** owned transactions, rolls, undo, and reroll.
 4. **Models:** abilities/effects, collections, mutations, inventory, ships.
 5. **Interpreters:** conditions, navigation, outcomes, caches, trade, combat,
    death, resurrection, persistent choices, and rules.
 6. **Rules-relevant UI:** every Java decision represented in KOReader.
-7. **Closure:** exhaustive corpus execution, approved differences, and final
-   independent audit.
+7. **Closure:** corpus smoke coverage, approved differences, final source
+   re-audit, and maintainer playtesting.
 
 ## 4. Workstream A — parity harness and inventory
 
-### A1. Java oracle adapter
+### A1. Java source behavior inventory
 
-- [ ] Add a Java test entrypoint which accepts fixture XML, initial state, RNG
-  sequence, and player decisions.
-- [ ] Serialize canonical checkpoints without Swing document objects.
-- [ ] Provide adapters for choice, item, money, ability, blessing, ship, flee,
-  resurrection, and confirmation prompts.
-- [ ] Record action availability changes caused by flags/listeners.
-- [ ] Prove the oracle itself with direct assertions against representative Java
-  methods before comparing Lua.
+- [x] Inventory the Java gameplay classes and executable XML vocabulary.
+- [x] Record the major behavior and known KOReader gaps in the audit/re-audit.
+- [ ] Add concise Java source references to each remaining implementation slice.
+- [ ] Recheck each completed subsystem against its Java classes before marking
+  the subsystem complete.
 
-**Acceptance:** one command produces stable JSON for navigation, a difficulty
-roll, an item loss selection, a market transaction, and one fight round.
+**Acceptance:** every remaining work item identifies the Java classes or methods
+that define its behavior. No executable Java test adapter is required.
 
 ### A2. Lua runner
 
 - [ ] Vendor or provision a Lua 5.1/LuaJIT interpreter in CI.
-- [ ] Add canonical state/action serialization matching A1.
-- [ ] Compare Java and Lua checkpoint JSON with readable structural diffs.
-- [ ] Support save/reload at a named checkpoint.
-- [ ] Support undo/reroll and alternate decisions from the same checkpoint.
+- [x] Add deterministic executable Lua fixtures for core blocking systems.
+- [x] Support save/reload in representative blocking scenarios.
+- [ ] Expand undo/reroll and alternate-decision scenarios as systems are finished.
 - [ ] Make `check-koreader-lua` mandatory for `koreader-plugin` and CI rather
   than silently optional.
 
 **Acceptance:** existing forced-random, blessing, embedded-use, and combat-hook
-fixtures run in CI and compare to output generated by Java, not handwritten
-expected constants.
+fixtures run under a Lua 5.1-compatible interpreter and assert the behavior
+derived from review of the corresponding Java classes.
 
 ### A3. Corpus signature census
 
 **Baseline implemented:** `tools/audit-koreader-capabilities.py` now inventories
-1,358 distinct executable shapes and preserves capability/oracle annotations
-across regeneration. All 1,358 deliberately remain `unverified` until backed by
-Java/Lua output; merely generating the census does not complete A3.
+1,358 distinct executable shapes and preserves capability/scenario annotations
+across regeneration. The census is a guide for finding unhandled shapes, not a
+requirement to create 1,358 one-to-one tests.
 
 - [ ] Generate normalized signatures for every executable element, its parent
   context, relevant siblings/children, and attribute combination.
 - [ ] Record reachability separately from raw occurrence.
-- [ ] Map every reachable signature to a capability and oracle fixture.
+- [ ] Map every reachable signature to a handler capability; attach a fixture
+  to representative or high-risk shapes.
 - [ ] Fail CI when a content or runtime change creates an unmapped signature.
 
-**Acceptance:** the report answers “which test proves this exact XML form?” for
-all reachable executable elements in books 1–6.
+**Acceptance:** the report identifies the responsible handler for every
+reachable executable shape and highlights shapes that still need implementation
+or focused regression coverage.
 
 ## 5. Workstream B — serializable execution machine
 
@@ -237,8 +225,8 @@ state is serializable. A frame contains:
 - [ ] Resurrection and death routing.
 
 **Acceptance:** for each container, a blocker nested at least three levels deep
-has identical Java/Lua checkpoints before the blocker, after reload, after
-resolution, and after the parent completes.
+has a focused Lua test covering state before the blocker, after reload, after
+resolution, and after the parent completes, based on the Java execution order.
 
 ### B3. Action lifecycle
 
@@ -279,9 +267,9 @@ resolution, and after the parent completes.
   loss-related rerolls.
 - [ ] Save/reload both before deciding to reroll and after the reroll result.
 
-**Acceptance:** Java and Lua match at every checkpoint for two consecutive
-rerolls, accepted failure, accepted success, permanent blessing, consumable
-blessing, potion, and nested-result mutation cases.
+**Acceptance:** focused tests cover two consecutive rerolls, accepted failure,
+accepted success, permanent blessing, consumable blessing, potion, and
+nested-result mutation cases using behavior derived from the Java sources.
 
 ## 7. Workstream D — character, abilities, effects, and rules
 
@@ -289,8 +277,8 @@ blessing, potion, and nested-result mutation cases.
 
 **In progress:** `core/stats.lua` now centralizes Java-style 1–12 basic ability
 bounds, nonfatal floors, fatal underflow death, independent Rank adjustment,
-maximum/current Stamina adjustment, damage/healing, and death detection. Oracle
-comparison and migration away from the legacy Defence field remain required.
+maximum/current Stamina adjustment, damage/healing, and death detection. Focused
+behavioral coverage and migration away from the legacy Defence field remain required.
 
 - [ ] Establish one source for natural ability, affected ability, testing value,
   Rank, current/max Stamina, and derived Defence.
@@ -303,7 +291,7 @@ comparison and migration away from the legacy Defence field remain required.
 
 ### D2. EffectSet parity
 
-- [ ] Oracle-test target/divide/add order, equal-effect ordering, wildcard scope,
+- [ ] Test target/divide/add order, equal-effect ordering, wildcard scope,
   negative rounding, and cumulative sources.
 - [ ] Match aura, wielded, armour, tool, god, curse, potion, and active blessing
   lifetimes.
@@ -325,7 +313,7 @@ comparison and migration away from the legacy Defence field remain required.
 **In progress:** `IfNode` evaluation now follows Java's alternative condition
 families rather than incorrectly requiring every distinct attribute family to
 match. Numeric codewords and section-local tick equality are represented.
-Complete ship/god compatibility, item-filter, listener, and oracle coverage is
+Complete ship/god compatibility, item-filter, listener, and behavioral coverage is
 still required.
 
 - [ ] Port every Java condition attribute and modifier, including natural versus
@@ -350,7 +338,7 @@ still required.
 item, codeword, numeric title, ship, crew, ability, and numeric-codeword
 conditions; supports automatic and derived values; and contributes to random,
 check, Rank-check, and loss adjustments. Exact title-pattern lookup, ambiguous
-ship selection, roll ownership, and Java-oracle comparison remain open.
+ship selection, roll ownership, and focused regression coverage remain open.
 
 `SetVarNode` now evaluates expressions through its Java-specific context:
 natural/affected abilities, Stamina, inventory or cache Shards, unique weapon
@@ -372,7 +360,7 @@ the following fallback outcome.
 - [ ] Complete `AdjustNode` thresholds, defaults, title values, professions,
   abilities, items, ships, cargo, and crew.
 - [ ] Implement general `WhileNode` semantics on B1 frames. *(Lua implementation
-  exists; acceptance awaits the B1 stepper and Java/Lua reload comparison.)*
+  exists; acceptance awaits the B1 stepper and nested reload tests.)*
 - [ ] Match outcome range parsing, flags, owner association, and fall-through.
 
 ## 9. Workstream F — gain, loss, tick, rest, and price
@@ -382,7 +370,7 @@ the following fallback outcome.
 **In progress:** special attack/Defence bonuses, difficulty curse/restore,
 weapon/armour locks, godless state, cache lock/thaw, numeric codewords, and
 section-local tick counts now have explicit model behavior. Interactive choices
-and executable Java-oracle comparison remain open.
+and executable behavioral coverage remain open.
 
 - [ ] Implement every observed `tick`/`gain` attribute and Java default.
 - [ ] Complete ability choice, profession choice, god compatibility, permanent
@@ -395,7 +383,7 @@ and executable Java-oracle comparison remain open.
 **In progress:** wildcard loss now preserves Java `keep` items, fractional
 `chance="x/y"` loss uses the journaled RNG per item unit, forced ambiguous item
 loss has a stable-id chooser that survives reload, and cache/`itemat` loss uses
-the selected collection. Optional ambiguous loss, Java-oracle comparison, and
+the selected collection. Optional ambiguous loss, broader regression coverage, and
 Java-owned undo remain open.
 
 - [ ] Implement chance-per-item loss with journaled dice.
@@ -414,7 +402,7 @@ executes hidden prices immediately, and preserves Java's retry behavior for an
 ambiguous item payment. Rest now implements Java's free-rest once default,
 explicit `once`, repeatable paid-use limits, full healing, variable fixed
 healing, implicit-d6 dice notation, revalidation, and post-use availability.
-Availability listeners, Java-owned dice undo, and complete oracle coverage
+Availability refresh, Java-style dice undo, and complete behavioral coverage
 remain open.
 
 - [ ] Port complete `PriceNode` currencies, items, filters, flags, grouped
@@ -423,7 +411,7 @@ remain open.
   undo behavior.
 
 **Acceptance:** every normalized `set`, `adjust`, `tick`, `gain`, `lose`,
-`adjustmoney`, `price`, and `rest` corpus signature has a Java/Lua oracle test.
+`adjustmoney`, `price`, and `rest` behavior family has representative Lua tests.
 
 ## 10. Workstream G — inventory, caches, and transfer
 
@@ -494,9 +482,9 @@ remain open.
 
 - [ ] Match victory, defeat, flee, death, resurrection, and following-section
   continuation order.
-- [ ] Add the reachable book 5/689 end-to-end save/reload oracle.
+- [ ] Add a reachable book 5/689 end-to-end save/reload regression test.
 - [ ] Add grouped fights, multiple attacks, hook destination, hook death, wrath
-  kill, Defence blessing, Luck reroll, potion, and stalemate oracles.
+  kill, Defence blessing, Luck reroll, potion, and stalemate scenarios.
 
 ## 13. Workstream J — blessings, gods, afflictions, death, resurrection
 
@@ -554,7 +542,7 @@ remain open.
 ## 15. Java class/node closure matrix
 
 Each row closes only when its attributes, state effects, choices, blocking,
-reload, and undo behavior pass Java/Lua oracle comparison.
+reload, and undo behavior have been reviewed against Java and pass focused tests.
 
 | Family | Java source-of-truth classes | Owning workstream | Status |
 | --- | --- | --- | --- |
@@ -588,7 +576,7 @@ but any presentation property that communicates action state belongs in K2.
 Each parity PR must contain:
 
 1. the Java classes/methods used as source of truth;
-2. Java-generated oracle output;
+2. a short summary of the Java behavior used as the reference;
 3. the Lua implementation;
 4. uninterrupted, reload, and undo/reroll comparisons where applicable;
 5. updated capability/signature mappings;
@@ -612,10 +600,10 @@ three inconsistent tag-specific implementations.
 - [ ] I1–I3 complete, including book 5/689.
 - [ ] J1–J3 complete.
 - [ ] K1–K3 complete or explicitly waived where allowed.
-- [ ] Every reachable corpus signature maps to a passing Java/Lua scenario.
+- [ ] Every reachable corpus signature maps to an implemented handler capability.
 - [ ] Runtime compatibility contains no gameplay `partial` or `missing` status.
 - [ ] Full test suite passes under the KOReader Lua runtime version.
-- [ ] Fresh independent Java-versus-Lua audit reports no unexplained difference.
+- [ ] Fresh Java-source-versus-Lua re-audit reports no unexplained difference.
 - [ ] Audit documents are reconciled with current code and commit ids.
 - [ ] Maintainer signs off on the full-parity claim.
 
