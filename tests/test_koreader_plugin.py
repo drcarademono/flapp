@@ -167,6 +167,15 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn("if truth(a.hidden,false) then", game)
         self.assertIn("local paid,cost=self:pay_price(data.node)", game)
 
+    def test_rest_matches_java_once_repeat_and_dice_rules(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn("function Game:rest_details(node)", game)
+        self.assertIn("function Game:rest_amount(node)", game)
+        self.assertIn("function Game:perform_rest(node,uses)", game)
+        self.assertIn('tostring(value):match("^(%d+)[dD](%d*)$")', game)
+        self.assertIn("math.floor(missing/fixed)", game)
+        self.assertIn("details.once and self.state.progress", game)
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

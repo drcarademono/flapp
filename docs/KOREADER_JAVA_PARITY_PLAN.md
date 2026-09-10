@@ -358,8 +358,11 @@ Java-owned undo remain open.
 **In progress:** `PriceNode` now revalidates its paid flag, Shards, and item
 requirements at activation time, performs item-and-money payment atomically,
 executes hidden prices immediately, and preserves Java's retry behavior for an
-ambiguous item payment. Availability listeners, oracle coverage, and the full
-rest matrix remain open.
+ambiguous item payment. Rest now implements Java's free-rest once default,
+explicit `once`, repeatable paid-use limits, full healing, variable fixed
+healing, implicit-d6 dice notation, revalidation, and post-use availability.
+Availability listeners, Java-owned dice undo, and complete oracle coverage
+remain open.
 
 - [ ] Port complete `PriceNode` currencies, items, filters, flags, grouped
   payment, availability listeners, rollback, and continuation.

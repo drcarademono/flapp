@@ -177,9 +177,26 @@ local function adventurer_stat_rules()
     equal(state.items[1].id,"kept","kept item identity")
 end
 
+local function rest_rules()
+    local state=ready_state(); state.stamina=10; state.max_stamina=20; state.shards=10
+    local game=Game.new(catalog("forced_random.xml"),state,function() return 4 end)
+    local repeatable={name="rest",attr={stamina="2",shards="1"},children={},_path="rest:paid"}
+    local details=game:rest_details(repeatable)
+    equal(details.max_uses,5,"paid rest maximum uses")
+    local ok,healed,charged=game:perform_rest(repeatable,3)
+    assert(ok); equal(healed,6,"paid rest healing"); equal(charged,3,"paid rest charge")
+    equal(state.stamina,16,"paid rest stamina"); equal(state.shards,7,"paid rest shards")
+    local dice={name="rest",attr={stamina="2d"},children={},_path="rest:dice"}
+    ok,healed=game:perform_rest(dice,1); assert(ok); equal(healed,4,"dice rest capped healing")
+    local free={name="rest",attr={},children={},_path="rest:free"}
+    state.stamina=12; ok,healed=game:perform_rest(free,1); assert(ok); equal(healed,8,"full free healing")
+    assert(game:rest_details(free).used,"free rest defaults to once")
+end
+
 effects_and_afflictions()
 embedded_use_program()
 ambiguous_item_loss()
 blessing_prompts()
 adventurer_stat_rules()
+rest_rules()
 io.write("Lua Java-oracle scenarios passed\n")

@@ -415,6 +415,53 @@ function Game:pay_price(node)
     return true,details.cost
 end
 
+function Game:rest_details(node)
+    local a=node.attr or {}; local cost=self:value(a.shards or 0)
+    local once=truth(a.once,cost==0)
+    local used=once and self.state.progress and self.state.progress.applied[node._path]
+    local missing=math.max(0,self.state.max_stamina-self.state.stamina)
+    local fixed
+    if not a.stamina then fixed=-1
+    elseif not tostring(a.stamina):match("^%d+[dD]%d*$") then fixed=self:value(a.stamina) end
+    local max_uses=1
+    if not once and fixed and fixed>0 and cost>0 then
+        max_uses=math.min(math.floor(self.state.shards/cost),math.floor(missing/fixed))
+    end
+    return {cost=cost,once=once,used=used,missing=missing,fixed=fixed,
+        max_uses=max_uses,available=not used and missing>0 and self.state.shards>=cost}
+end
+
+function Game:rest_amount(node)
+    local value=node.attr and node.attr.stamina
+    if value==nil then return -1 end
+    local dice,sides=tostring(value):match("^(%d+)[dD](%d*)$")
+    if dice then
+        sides=tonumber(sides) or 6; local total=0
+        for _=1,tonumber(dice) do total=total+self:roll(sides) end
+        return total
+    end
+    return self:value(value)
+end
+
+function Game:perform_rest(node,uses)
+    local details=self:rest_details(node); uses=tonumber(uses) or 1
+    if not details.available or uses<1 or uses>details.max_uses then
+        return false,"You cannot rest that many times."
+    end
+    -- Dice healing is rolled once in Java and therefore cannot be multiplied
+    -- through the paid multi-day chooser.
+    local amount=self:rest_amount(node)
+    if tostring(node.attr.stamina or ""):match("^%d+[dD]%d*$") then uses=1 end
+    local charge=details.cost*uses
+    if self.state.shards<charge then return false,"You cannot afford to rest." end
+    self.state.shards=self.state.shards-charge
+    local before=self.state.stamina
+    if amount<0 then self.state.stamina=self.state.max_stamina
+    else self.state.stamina=math.min(self.state.max_stamina,before+amount*uses) end
+    if details.once and self.state.progress then self.state.progress.applied[node._path]=true end
+    return true,self.state.stamina-before,charge
+end
+
 function Game:start_loss_selection(node)
     local a=node.attr; local indices,items=self:loss_indices(a)
     if self.state.selection and self.state.selection.kind=="loss" and self.state.selection.instruction==node._path then
@@ -1085,8 +1132,15 @@ function Game:walk(node, enabled)
         if cache then local target=self.state.caches[cache] or State.new_cache(); self.state.caches[cache]=target; target.shards=math.max(0,target.shards*multiplier)
         else self.state.shards=math.max(0,self.state.shards*multiplier) end
     elseif n=="rest" then
-        if self.state.stamina<self.state.max_stamina and self.state.shards>=self:value(a.shards or 0) then
-            self:add_action(self:node_text(node) or "Rest","rest",node)
+        local details=self:rest_details(node)
+        if details.available then
+            if truth(a.hidden,false) then
+                self:perform_rest(node,details.max_uses)
+            elseif details.max_uses>1 then
+                for uses=1,details.max_uses do
+                    self:add_action((self:node_text(node) or "Rest").." ("..uses.." days)","rest",{node=node,uses=uses})
+                end
+            else self:add_action(self:node_text(node) or "Rest","rest",{node=node,uses=1}) end
         end
         return
     elseif n=="random" then
@@ -1457,14 +1511,21 @@ function Game:_choose(index)
         for index,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,index); break end end
         return {title="Payment made",text="Paid "..cost.." Shards.",actions=self.actions,image=self.image}
     elseif action.kind=="rest" then
-        local node,a=action.data,action.data.attr
-        local cost=self:value(a.shards or 0)
-        if self.state.shards<cost then return nil,"You cannot afford to rest." end
-        self.state.shards=self.state.shards-cost
-        local amount=a.stamina and self:value(a.stamina) or (self.state.max_stamina-self.state.stamina)
-        self.state.stamina=math.min(self.state.max_stamina,self.state.stamina+amount)
-        self.state.progress.applied[node._path]=true
-        for i,candidate in ipairs(self.actions) do if candidate==action then table.remove(self.actions,i); break end end
+        local data=action.data; local node=data.node or data
+        local rested,amount=self:perform_rest(node,data.uses or 1)
+        if not rested then return nil,amount end
+        -- Refresh all actions for this RestNode: repeatable paid rests remain
+        -- available only while the adventurer is wounded and can afford them.
+        for i=#self.actions,1,-1 do
+            local candidate=self.actions[i]
+            if candidate.kind=="rest" and (candidate.data.node or candidate.data)==node then table.remove(self.actions,i) end
+        end
+        local details=self:rest_details(node)
+        if details.available then
+            if details.max_uses>1 then for uses=1,details.max_uses do
+                self:add_action((self:node_text(node) or "Rest").." ("..uses.." days)","rest",{node=node,uses=uses})
+            end else self:add_action(self:node_text(node) or "Rest","rest",{node=node,uses=1}) end
+        end
         return {title="Rested",text=table.concat(self.text).."\n\nRestored "..amount.." Stamina.",actions=self.actions,image=self.image}
     elseif action.kind=="group" then
         self.actions={}
