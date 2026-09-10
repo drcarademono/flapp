@@ -186,6 +186,16 @@ class KOReaderPluginTests(unittest.TestCase):
         self.assertIn('self:add_action(self:node_text(node) or "Set value","setvar",node)', game)
         self.assertIn('action.kind=="setvar"', game)
 
+    def test_while_iterations_are_serializable_and_reset_child_execution(self) -> None:
+        game = (PLUGIN / "core" / "game.lua").read_text()
+        self.assertIn('candidate.kind=="while" and candidate.path==node._path', game)
+        self.assertIn('kind="while",path=node._path,var=a.var,iteration=1', game)
+        self.assertIn('frame.iteration=frame.iteration+1', game)
+        self.assertIn('self.state.progress.applied[path]=nil', game)
+        self.assertIn('self.state.progress.completed[path]=nil', game)
+        self.assertIn('while loop execution limit exceeded at ', game)
+        self.assertTrue((ROOT / "tests" / "lua" / "fixtures" / "while_random.xml").is_file())
+
     def test_extended_java_game_systems_are_dispatched(self) -> None:
         game = (PLUGIN / "core" / "game.lua").read_text()
         state = (PLUGIN / "core" / "state.lua").read_text()

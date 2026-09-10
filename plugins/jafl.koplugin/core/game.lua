@@ -1326,11 +1326,29 @@ function Game:walk(node, enabled)
     elseif n=="curse" or n=="disease" or n=="poison" then
         self:apply_affliction(n,node)
     elseif n=="while" then
+        local frame
+        for _,candidate in ipairs(self.state.execution.frames) do
+            if candidate.kind=="while" and candidate.path==node._path then frame=candidate; break end
+        end
+        if not frame then
+            frame={schema=1,kind="while",path=node._path,var=a.var,iteration=1}
+            self.state.execution.frames[#self.state.execution.frames+1]=frame
+        end
         local guard=0
         while self.state.variables[a.var]==nil and guard<100 do
             guard=guard+1
             for _,child in ipairs(node.children or {}) do self:walk(child,true) end
+            if self.state.variables[a.var]==nil then
+                frame.iteration=frame.iteration+1
+                local prefix=node._path.."."
+                for path in pairs(self.state.progress.applied) do if path:sub(1,#prefix)==prefix then self.state.progress.applied[path]=nil end end
+                for path in pairs(self.state.progress.completed) do if path:sub(1,#prefix)==prefix then self.state.progress.completed[path]=nil end end
+            end
         end
+        if self.state.variables[a.var]~=nil then
+            for index=#self.state.execution.frames,1,-1 do if self.state.execution.frames[index]==frame then table.remove(self.state.execution.frames,index); break end end
+        end
+        if guard>=100 and self.state.variables[a.var]==nil then error("while loop execution limit exceeded at "..node._path) end
         return
     elseif n=="extrachoice" then
         local list=self.state.models.extra_choices

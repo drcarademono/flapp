@@ -322,10 +322,15 @@ and armour bonuses, match counts, crew, codeword values, and ordinary section
 variables. It also distinguishes invisible automatic sets from authored
 forced/optional actions and docks only ships at the current location.
 
+`WhileNode` now has a serializable execution frame containing its variable and
+iteration. A completed iteration resets descendant applied/completed markers,
+matching Java's child-runner reset, while a save in a blocking child restores
+that exact iteration without replaying its already completed mutations.
+
 - [ ] Complete `SetVarNode` modifier/cache/item/dock forms.
 - [ ] Complete `AdjustNode` thresholds, defaults, title values, professions,
   abilities, items, ships, cargo, and crew.
-- [ ] Implement general `WhileNode` semantics on B1 frames.
+- [x] Implement general `WhileNode` semantics on B1 frames.
 - [ ] Match outcome range parsing, flags, owner association, and fall-through.
 
 ## 9. Workstream F — gain, loss, tick, rest, and price

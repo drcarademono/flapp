@@ -1,0 +1,7 @@
+<section>
+  <while var="done">
+    <random dice="1" var="x">Roll while trapped</random>
+    <if var="x" equals="6" not="t"><set var="done" value="1"/></if>
+  </while>
+  <set var="after" value="1"/>
+</section>
